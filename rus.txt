@@ -1,0 +1,16 @@
+..\gamemodes\crimson.pwn(5) : предупреждение 218: старый стиль прототипов с необязательным символом ";" в конце
+..\gamemodes\crimson.pwn(1147) : предупреждение 218: старый стиль прототипов с необязательным символом ";" в конце
+..\gamemodes\crimson.pwn(1148) : предупреждение 218: старый стиль прототипов с необязательным символом ";" в конце
+../include/system/inventory_system.pwn(19) : ошибка 021: идентификатор "invItem" уже объявлен
+../include/system/inventory_system.pwn(26) : ошибка 009: неверный размер массива (отрицательный/нулевой размер или выход за пределы массива)
+../include/system/inventory_system.pwn(34) : ошибка 017: необъявленный символ "PlayerInventory"
+../include/system/inventory_system.pwn(34) : ошибка 001: ожидался токен ";", но найден "]"
+../include/system/inventory_system.pwn(34) : ошибка 029: неправильное выражение, принят ноль
+../include/system/inventory_system.pwn(34) : фатальная ошибка 107: слишком много ошибок на одной строке
+
+Компиляция остановлена.
+
+Pawn compiler 3.2.3664	 	 	Copyright (c) 1997-2016, ITB CompuPhase
+
+
+Ошибок:6.
