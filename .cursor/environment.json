@@ -1,0 +1,3 @@
+{
+  "install": "mkdir -p gamemodes include/system && chmod +x scripts/compile.sh"
+}
