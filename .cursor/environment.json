@@ -1,0 +1,3 @@
+{
+  "install": "chmod +x scripts/*.sh && bash scripts/setup-env.sh"
+}

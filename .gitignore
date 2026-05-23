@@ -1,0 +1,6 @@
+*.amx
+*.lst
+*.asm
+tools/
+_extract/
+_extract*/
