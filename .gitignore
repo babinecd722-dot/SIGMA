@@ -1,0 +1,10 @@
+.idea/
+*.iml
+*.apk
+*.xapk
+*.so
+*.keystore
+*.idsig
+.android/
+ndk.zip
+**/__pycache__/
