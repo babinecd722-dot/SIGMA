@@ -30,4 +30,3 @@ void DrawMarkerEsp() {
 bool GoToMarker() { return game::radar::TeleportToMarker(); }
 
 }  // namespace res::teleport
-EOF

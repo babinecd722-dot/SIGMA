@@ -15,4 +15,3 @@ Vec3 Vec3::Normalized() const {
 }
 
 }  // namespace res::game
-EOF

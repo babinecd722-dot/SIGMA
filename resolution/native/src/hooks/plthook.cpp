@@ -83,4 +83,3 @@ void* Replace(const char* /*module*/, const char* symbol, void* replacement) {
 }
 
 }  // namespace res::plthook
-EOF

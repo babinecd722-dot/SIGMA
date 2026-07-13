@@ -61,4 +61,3 @@ Root& Get();
 void Reset();
 
 }  // namespace res::cfg
-EOF

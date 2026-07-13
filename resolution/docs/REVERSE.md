@@ -84,16 +84,26 @@ API names recovered from mangled strings:
 
 ---
 
+## CMapModel runtime fingerprint
+
+Ctor `@ 0x15BAF40` stores empty-list sentinel into `CMapModel+0x3C0`:
+
+- sentinel RVA `0x2005A88` (`adrp 0x2005000` + `#0xa88`)
+- Empty nav fallback from `0x15BE708` when mode ≠ 1: RVA `0x33B6068`
+
+RESOLUTION discovers `CMapModel*` by scanning RW anonymous heap for `*(map+0x3C0) == client_base+0x2005A88`, preferring `mode==1` + `HasPosition` on `+0x394`.
+
+---
+
 ## Still open (do not invent)
 
-- Stable global / GuiManager path to `CMapViewModel*` / `CMapModel*` (instance not pinned yet)
+- Stable global / GuiManager → `CMapViewModel*` path (singleton not pinned; heap fingerprint used instead)
 - Full bone matrix via `SkinGetBonePositionsToTable` / `m_transform` (assert only so far)
 - Camera view/proj matrix for W2S (Noesis/librw path, not recovered)
-- Exact writer body of `SetGpsNavigationTarget` (read path recovered; write via calling game fn or patching `m_navigationTarget` once `CMapModel*` known)
+- Exact writer body of `SetGpsNavigationTarget` (read path recovered; teleport reads pin then soft-writes entity `+0x38`)
 
 ---
 
 ## Product implication
 
 ESP/aim/teleport code must use the structures above. No SA-MP `PlayerPool` / `localPlayer+0x8` layouts.
-EOF

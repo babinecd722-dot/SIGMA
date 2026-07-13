@@ -125,4 +125,3 @@ bool SetLocalPosition(const Vec3& pos) { return player::SetPosition(pos); }
 bool GetBone(uintptr_t ped, BoneId bone, Vec3& out) { return player::GetBone(ped, bone, out); }
 
 }  // namespace res::game
-EOF

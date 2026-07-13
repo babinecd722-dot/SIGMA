@@ -13,4 +13,3 @@ public final class NativeBridge {
 
     public static native void bindMapModel(long mapModelPtr);
 }
-EOF

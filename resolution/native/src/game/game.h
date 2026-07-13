@@ -43,4 +43,3 @@ bool ViewProj(Mat34& view, Mat34& proj);
 uintptr_t Deref(uintptr_t addr);
 bool ReadMat(uintptr_t addr, Mat34& out);
 }  // namespace res::game::detail
-EOF

@@ -13,4 +13,3 @@ inline constexpr ImVec4 kText = ImVec4(0.92f, 0.94f, 0.96f, 1.f);
 inline constexpr ImVec4 kMuted = ImVec4(0.55f, 0.60f, 0.65f, 1.f);
 
 }  // namespace res::ui
-EOF

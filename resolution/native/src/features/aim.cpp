@@ -82,4 +82,3 @@ void Tick() {
 }
 
 }  // namespace res::aim
-EOF

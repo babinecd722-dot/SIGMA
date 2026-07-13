@@ -22,4 +22,3 @@ uintptr_t ResolveAdrpAdd(uintptr_t adrp_instr);
 uintptr_t ResolveAdrpLdr(uintptr_t adrp_instr);
 
 }  // namespace res::pattern
-EOF

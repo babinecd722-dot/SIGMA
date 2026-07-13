@@ -69,4 +69,3 @@ void DrawFab() {
 }
 
 }  // namespace res::ui
-EOF

@@ -11,4 +11,3 @@ void Remove();
 void OnTouch(int action, float x, float y, int pointer_id);
 
 }  // namespace res::hooks
-EOF

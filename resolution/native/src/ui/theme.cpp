@@ -46,4 +46,3 @@ void ApplyResolutionTheme() {
 }
 
 }  // namespace res::ui
-EOF

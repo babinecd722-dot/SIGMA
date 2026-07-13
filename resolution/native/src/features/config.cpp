@@ -10,4 +10,3 @@ Root& Get() { return g_cfg; }
 void Reset() { g_cfg = Root{}; }
 
 }  // namespace res::cfg
-EOF

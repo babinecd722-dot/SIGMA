@@ -74,4 +74,3 @@ target_compile_definitions(resolution PRIVATE
   IMGUI_IMPL_OPENGL_ES3
   IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 )
-EOF

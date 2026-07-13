@@ -26,7 +26,11 @@ bool Write(void* addr, const T& value) {
 }
 
 bool ReadBytes(const void* addr, void* dst, std::size_t len);
+// Soft data write: memcpy on RW pages, mprotect only if needed (no clear_cache).
 bool WriteBytes(void* addr, const void* src, std::size_t len);
+// Code patch: RWX + instruction cache flush.
+bool WriteBytesCode(void* addr, const void* src, std::size_t len);
+bool PageAlreadyWritable(void* p, std::size_t len);
 
 void* ModuleBase(const char* name);
 std::size_t ModuleSize(const char* name);
@@ -44,4 +48,3 @@ bool Protect(void* addr, std::size_t len, int prot);
 bool Patch(void* addr, const void* data, std::size_t len);
 
 }  // namespace res::mem
-EOF

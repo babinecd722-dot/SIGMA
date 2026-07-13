@@ -46,4 +46,3 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_resolution_br_NativeBridge_bindMapModel(JNIEnv*, jclass, jlong ptr) {
   res::game::BindMapModel(static_cast<uintptr_t>(ptr));
 }
-EOF

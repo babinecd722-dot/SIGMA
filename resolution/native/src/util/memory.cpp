@@ -2,19 +2,22 @@
 
 #include "util/log.h"
 
-#include <fcntl.h>
-#include <link.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <sstream>
+#include <string>
 
 namespace res::mem {
 namespace {
 
-bool Probe(const void* p, std::size_t len, int prot_need) {
+enum class MapPerm : int { None = 0, Read = 1, Write = 2 };
+
+bool RegionPerms(const void* p, std::size_t len, int& out_perms) {
+  out_perms = 0;
   if (!p || len == 0) return false;
   const auto addr = reinterpret_cast<uintptr_t>(p);
   const long page = sysconf(_SC_PAGESIZE);
@@ -29,12 +32,8 @@ bool Probe(const void* p, std::size_t len, int prot_need) {
     char perms[8] = {};
     if (std::sscanf(line.c_str(), "%lx-%lx %7s", &a, &b, perms) != 3) continue;
     if (b <= start || a >= end) continue;
-    const bool r = perms[0] == 'r';
-    const bool w = perms[1] == 'w';
-    if ((prot_need & PROT_READ) && !r) return false;
-    if ((prot_need & PROT_WRITE) && !w) {
-      // writable check is soft — we may mprotect later
-    }
+    if (perms[0] == 'r') out_perms |= static_cast<int>(MapPerm::Read);
+    if (perms[1] == 'w') out_perms |= static_cast<int>(MapPerm::Write);
     return true;
   }
   return false;
@@ -43,11 +42,19 @@ bool Probe(const void* p, std::size_t len, int prot_need) {
 }  // namespace
 
 bool IsReadable(const void* p, std::size_t len) {
-  return Probe(p, len, PROT_READ);
+  int perms = 0;
+  return RegionPerms(p, len, perms) && (perms & static_cast<int>(MapPerm::Read));
 }
 
 bool IsWritable(void* p, std::size_t len) {
-  return Probe(p, len, PROT_READ);
+  int perms = 0;
+  // Soft: readable heap that we may mprotect is accepted for probe.
+  return RegionPerms(p, len, perms) && (perms & static_cast<int>(MapPerm::Read));
+}
+
+bool PageAlreadyWritable(void* p, std::size_t len) {
+  int perms = 0;
+  return RegionPerms(p, len, perms) && (perms & static_cast<int>(MapPerm::Write));
 }
 
 bool ReadBytes(const void* addr, void* dst, std::size_t len) {
@@ -57,6 +64,18 @@ bool ReadBytes(const void* addr, void* dst, std::size_t len) {
 }
 
 bool WriteBytes(void* addr, const void* src, std::size_t len) {
+  // Prefer plain store on already-writable pages (game heap / BSS).
+  // Avoid mprotect noise that client integrity checks can notice.
+  if (PageAlreadyWritable(addr, len)) {
+    std::memcpy(addr, src, len);
+    return true;
+  }
+  if (!Protect(addr, len, PROT_READ | PROT_WRITE)) return false;
+  std::memcpy(addr, src, len);
+  return true;
+}
+
+bool WriteBytesCode(void* addr, const void* src, std::size_t len) {
   if (!Protect(addr, len, PROT_READ | PROT_WRITE | PROT_EXEC)) return false;
   std::memcpy(addr, src, len);
   __builtin___clear_cache(reinterpret_cast<char*>(addr),
@@ -100,8 +119,7 @@ bool Protect(void* addr, std::size_t len, int prot) {
 }
 
 bool Patch(void* addr, const void* data, std::size_t len) {
-  return WriteBytes(addr, data, len);
+  return WriteBytesCode(addr, data, len);
 }
 
 }  // namespace res::mem
-EOF

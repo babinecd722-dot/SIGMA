@@ -13,4 +13,3 @@ namespace res::teleport {
 void DrawMarkerEsp();
 bool GoToMarker();
 }
-EOF

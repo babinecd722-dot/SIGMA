@@ -4,6 +4,7 @@
 #include "features/features.h"
 #include "game/br_offsets.h"
 #include "game/game.h"
+#include "game/radar.h"
 #include "ui/theme.h"
 
 #include "imgui.h"
@@ -94,9 +95,12 @@ void DrawMenu() {
         ImGui::Text("Marker:  %.2f  %.2f  %.2f", m.world.x, m.world.y, m.world.z);
       } else {
         ImGui::TextDisabled("No active navigation target");
-        ImGui::TextDisabled("Bind CMapModel* if pool path alone is insufficient");
+        ImGui::TextDisabled("Set GPS pin in-game, then Find map / Go");
       }
 
+      if (ImGui::Button("Find CMapModel", ImVec2(-1, 28))) {
+        game::radar::RefreshMapModel();
+      }
       if (ImGui::Button("Go to marker", ImVec2(-1, 36))) {
         teleport::GoToMarker();
       }
@@ -128,4 +132,3 @@ void DrawMenu() {
 }
 
 }  // namespace res::ui
-EOF

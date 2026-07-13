@@ -18,4 +18,3 @@ uintptr_t PedOf(uintptr_t player);
 bool ReadEntityPos(uintptr_t ent, Vec3& out);
 
 }  // namespace res::game::player
-EOF

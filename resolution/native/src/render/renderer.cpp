@@ -70,4 +70,3 @@ void EndFrame() {
 }
 
 }  // namespace res::render
-EOF

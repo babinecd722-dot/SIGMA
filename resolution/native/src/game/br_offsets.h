@@ -41,6 +41,11 @@ inline constexpr std::uint32_t kLocHasPos = 0x14;
 inline constexpr std::uint32_t kMapNavAlt = 0x37C;     // MapObjectLocation
 inline constexpr std::uint32_t kMapNavTarget = 0x394;  // m_navigationTarget
 inline constexpr std::uint32_t kMapNavMode = 0x3B8;    // ==1 → GPS target active path
+// Ctor @ 0x15BAF40 stores empty-list sentinel into +0x3C0 (stable fingerprint).
+inline constexpr std::uint32_t kMapListSentinel = 0x3C0;
+inline constexpr std::uintptr_t kMapListSentinelRva = 0x2005A88;
+// Fallback empty location returned by 0x15BE708 when mode != 1.
+inline constexpr std::uintptr_t kEmptyNavLocRva = 0x33B6068;
 
 // --- Gui::CMapViewModel ---
 inline constexpr std::uint32_t kViewMapModel = 0x60;  // CMapModel* m_mapModel
@@ -58,4 +63,4 @@ inline constexpr std::uintptr_t kFnLocGetId = 0x15C6CAC;
 inline constexpr std::uintptr_t kFnMapNavPtr = 0x15BE708;  // CMapModel* → MapObjectLocation*
 
 }  // namespace res::br
-EOF
+

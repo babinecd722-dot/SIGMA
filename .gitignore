@@ -29,3 +29,6 @@ resolution/native/third_party/imgui/**
 !resolution/native/third_party/imgui/imstb_*.h
 !resolution/native/third_party/imgui/LICENSE.txt
 resolution/resolution_fab_icon.png
+resolution/tools/__pycache__/
+.android/
+ndk.zip

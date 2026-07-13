@@ -104,4 +104,3 @@ inline constexpr int kBoneLinks[][2] = {
 };
 
 }  // namespace res::game
-EOF

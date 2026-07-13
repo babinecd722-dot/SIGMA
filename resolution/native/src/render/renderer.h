@@ -7,4 +7,3 @@ void BeginFrame(int width, int height);
 void EndFrame();
 bool Ready();
 }
-EOF
