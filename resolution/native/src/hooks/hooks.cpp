@@ -8,6 +8,7 @@
 #include "imgui.h"
 
 #include <EGL/egl.h>
+#include <dlfcn.h>
 #include <jni.h>
 
 #include <atomic>
@@ -22,17 +23,20 @@ using MultiTouchFn = void (*)(JNIEnv*, jclass, jint, jint, jint, jint, jint, jin
 EglSwapBuffersFn g_orig_swap = nullptr;
 MultiTouchFn g_orig_touch = nullptr;
 std::atomic<bool> g_installed{false};
+std::atomic<bool> g_frame_ok{true};
 std::mutex g_touch_mu;
 
 EGLBoolean HookedSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
-  EGLint w = 0, h = 0;
-  eglQuerySurface(dpy, surface, EGL_WIDTH, &w);
-  eglQuerySurface(dpy, surface, EGL_HEIGHT, &h);
-  if (w > 0 && h > 0) {
-    if (!game::Ready()) game::Init();
-    game::SetScreenSize(w, h);
-    render::BeginFrame(w, h);
-    render::EndFrame();
+  if (g_frame_ok.load()) {
+    // Never let overlay faults kill the process.
+    EGLint w = 0, h = 0;
+    if (eglQuerySurface(dpy, surface, EGL_WIDTH, &w) &&
+        eglQuerySurface(dpy, surface, EGL_HEIGHT, &h) && w > 0 && h > 0) {
+      if (!game::Ready()) game::Init();
+      game::SetScreenSize(w, h);
+      render::BeginFrame(w, h);
+      render::EndFrame();
+    }
   }
   return g_orig_swap ? g_orig_swap(dpy, surface) : EGL_FALSE;
 }
@@ -50,11 +54,18 @@ void HookedMultiTouch(JNIEnv* env, jclass clazz, jint action, jint pointer_actio
 bool Install() {
   if (g_installed.exchange(true)) return true;
 
-  void* prev = plthook::Replace("libEGL.so", "eglSwapBuffers",
+  // Prefer GOT of the game client (and fall back to any importer). Never inline-patch libEGL.
+  void* prev = plthook::Replace("libblackrussia-client.so", "eglSwapBuffers",
                                 reinterpret_cast<void*>(&HookedSwapBuffers));
+  if (!prev) {
+    prev = plthook::Replace("", "eglSwapBuffers", reinterpret_cast<void*>(&HookedSwapBuffers));
+  }
   g_orig_swap = reinterpret_cast<EglSwapBuffersFn>(prev);
   if (!g_orig_swap) {
-    RES_LOGE("failed to hook eglSwapBuffers");
+    // Absolute fallback: call through libEGL without hook — menu won't show, but app lives.
+    void* egl = dlopen("libEGL.so", RTLD_NOW);
+    g_orig_swap = egl ? reinterpret_cast<EglSwapBuffersFn>(dlsym(egl, "eglSwapBuffers")) : nullptr;
+    RES_LOGW("eglSwapBuffers GOT hook failed — running without overlay");
     g_installed = false;
     return false;
   }
@@ -64,10 +75,10 @@ bool Install() {
       reinterpret_cast<void*>(&HookedMultiTouch));
   g_orig_touch = reinterpret_cast<MultiTouchFn>(touch);
   if (!g_orig_touch) {
-    RES_LOGW("multiTouchEvent hook missing — FAB needs NativeBridge.onTouch fallback");
+    RES_LOGW("multiTouchEvent GOT miss — use NativeBridge.onTouch if wired");
   }
 
-  RES_LOGI("hooks installed");
+  RES_LOGI("hooks installed (GOT)");
   return true;
 }
 

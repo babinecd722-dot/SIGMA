@@ -23,9 +23,9 @@ bool Init() {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   io.IniFilename = nullptr;
 
-  // GLES3 / GL ES shader version
   if (!ImGui_ImplOpenGL3_Init("#version 300 es")) {
     RES_LOGE("ImGui_ImplOpenGL3_Init failed");
+    ImGui::DestroyContext();
     return false;
   }
   ui::ApplyResolutionTheme();

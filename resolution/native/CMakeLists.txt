@@ -54,6 +54,7 @@ target_compile_options(resolution PRIVATE
 target_link_options(resolution PRIVATE
   -Wl,--gc-sections
   -Wl,-z,max-page-size=16384
+  -Wl,-z,common-page-size=16384
 )
 
 find_library(log-lib log)
