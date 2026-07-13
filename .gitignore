@@ -32,3 +32,6 @@ resolution/resolution_fab_icon.png
 resolution/tools/__pycache__/
 .android/
 ndk.zip
+*.keystore
+*.idsig
+resolution/out/*.apk
