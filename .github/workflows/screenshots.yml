@@ -35,6 +35,15 @@ jobs:
           mkdir -p Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
           cp Package.resolved Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
+      - name: Compile UI regression runner
+        run: |
+          xcodebuild -quiet build-for-testing \
+            -project Screenshots/Shots.xcodeproj \
+            -scheme Shots \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/UITests \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+
       - name: Resolve pinned dependencies and apply reviewed patches
         run: |
           xcodebuild \
@@ -133,9 +142,10 @@ jobs:
       - name: Verify foreground appearance, scrollback, history and reconnect
         run: |
           set -o pipefail
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project Screenshots/Shots.xcodeproj \
             -scheme Shots \
+            -derivedDataPath build/UITests \
             -destination "platform=iOS Simulator,id=$UDID" \
             -parallel-testing-enabled NO \
             -resultBundlePath build/ui-tests.xcresult \

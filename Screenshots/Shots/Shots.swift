@@ -145,7 +145,12 @@ final class Shots: XCTestCase {
                 bytesPerRow: 32, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
             context.draw(crop, in: CGRect(x: 0, y: 0, width: 8, height: 8))
         }
-        return (0..<64).reduce(0.0) { $0 + Double(rgba[$1 * 4]) + Double(rgba[$1 * 4 + 1]) + Double(rgba[$1 * 4 + 2]) } / (64 * 3 * 255)
+        var total: UInt64 = 0
+        for pixel in 0..<64 {
+            let offset = pixel * 4
+            total += UInt64(rgba[offset]) + UInt64(rgba[offset + 1]) + UInt64(rgba[offset + 2])
+        }
+        return Double(total) / (64.0 * 3.0 * 255.0)
     }
 
     private func shot(_ name: String) {
