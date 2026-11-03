@@ -74,7 +74,9 @@ struct TerminalSurface: UIViewRepresentable {
         }
         let style: UIUserInterfaceStyle = theme.id == "paper" ? .light : .dark
         view.overrideUserInterfaceStyle = style
-        view.keyboardAppearance = style == .light ? .light : .dark
+        let keyboardAppearance: UIKeyboardAppearance = style == .light ? .light : .dark
+        let keyboardChanged = view.keyboardAppearance != keyboardAppearance
+        view.keyboardAppearance = keyboardAppearance
         view.indicatorStyle = style == .light ? .black : .white
         view.inputAccessoryView?.overrideUserInterfaceStyle = style
         view.backgroundColor = theme.uiBackground
@@ -88,6 +90,7 @@ struct TerminalSurface: UIViewRepresentable {
         view.selectedTextForegroundColor = theme.uiForeground
         view.installColors(theme.ansiColors)
         view.setNeedsDisplay()
+        if keyboardChanged, view.isFirstResponder { view.reloadInputViews() }
     }
 
     /// The accessory bar outlives any single TerminalView (it's cached

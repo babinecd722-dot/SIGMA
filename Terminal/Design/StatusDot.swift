@@ -34,14 +34,21 @@ struct StatusDot: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !animates)) { context in
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-                .opacity(animates ? 0.7 + 0.3 * cos(context.date.timeIntervalSinceReferenceDate * .pi / 0.9) : 1)
+        Group {
+            if animates {
+                dot.phaseAnimator([false, true]) { content, dimmed in
+                    content.opacity(dimmed ? 0.4 : 1)
+                } animation: { _ in .easeInOut(duration: 0.9) }
+            } else {
+                dot
+            }
         }
             .accessibilityLabel(Text("Status"))
             .accessibilityValue(Text(state.accessibilityText))
+    }
+
+    private var dot: some View {
+        Circle().fill(color).frame(width: 8, height: 8)
     }
 
     /// Pulse only while establishing a connection — steady states don't

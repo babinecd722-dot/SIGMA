@@ -60,6 +60,7 @@ struct TerminalScreenView: View {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
                         StatusDot(state: StatusDot.State(session.state))
+                            .accessibilityIdentifier("activeSessionStatus")
                         Text(session.title)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)

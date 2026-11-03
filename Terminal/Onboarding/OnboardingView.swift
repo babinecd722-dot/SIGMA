@@ -292,13 +292,22 @@ private struct BlinkingCursor: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.1, paused: reduceMotion)) { context in
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.white)
-                .frame(width: 17, height: 30)
-                .opacity(reduceMotion ? 1 : 0.5 + 0.5 * cos(context.date.timeIntervalSinceReferenceDate * .pi / 0.53))
+        Group {
+            if reduceMotion {
+                cursor
+            } else {
+                cursor.phaseAnimator([false, true]) { content, dimmed in
+                    content.opacity(dimmed ? 0 : 1)
+                } animation: { _ in .easeInOut(duration: 0.53) }
+            }
         }
         .accessibilityHidden(true)
+    }
+
+    private var cursor: some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(Color.white)
+            .frame(width: 17, height: 30)
     }
 }
 

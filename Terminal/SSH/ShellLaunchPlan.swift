@@ -19,7 +19,9 @@ struct ShellLaunchPlan {
         let customShell = shell.map { " " + Self.quote($0) } ?? ""
         command = "if ! tmux has-session -t \(target) 2>/dev/null; then "
             + "tmux new-session -d -s \(Self.quote(name))\(customShell) || exit; fi; "
-            + "tmux set-option -t \(target) status off; "
+            // set-option resolves a session name literally: unlike
+            // has-session/attach, it does not accept the '=' prefix.
+            + "tmux set-option -t \(Self.quote(name)) status off; "
             + "exec tmux attach-session -d -t \(target)"
     }
 

@@ -42,6 +42,7 @@ jobs:
             -scheme Shots \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/UITests \
+            ONLY_ACTIVE_ARCH=YES ARCHS="$(uname -m)" \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
 
       - name: Resolve pinned dependencies and apply reviewed patches
@@ -70,6 +71,7 @@ jobs:
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGN_IDENTITY=- \
+            ONLY_ACTIVE_ARCH=YES ARCHS="$(uname -m)" \
             build
           ls build/Build/Products/Debug-iphonesimulator/Terminal.app
 
@@ -155,6 +157,7 @@ jobs:
         if: always()
         run: |
           if [ -f build/sshd.pid ]; then sudo kill "$(cat build/sshd.pid)" || true; fi
+          if [ -f build/sshd.log ]; then sudo cat build/sshd.log > build/ssh-fixture.log; fi
 
       - name: Export screenshots
         if: always()
@@ -171,5 +174,5 @@ jobs:
             shots/
             build/ui-tests.xcresult
             test.log
-            build/sshd.log
+            build/ssh-fixture.log
           retention-days: 30

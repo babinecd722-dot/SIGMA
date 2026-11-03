@@ -9,7 +9,7 @@ on:
     types: [created]
 
 concurrency:
-  group: ios-${{ github.ref }}
+  group: ios-build-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

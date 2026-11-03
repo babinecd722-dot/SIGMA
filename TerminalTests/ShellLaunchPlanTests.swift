@@ -20,6 +20,7 @@ final class ShellLaunchPlanTests: XCTestCase {
         XCTAssertTrue(launch.usesTmux)
         XCTAssertTrue(command.contains("has-session -t '=term-\(id.uuidString)'"))
         XCTAssertTrue(command.contains("status off"))
+        XCTAssertTrue(command.contains("set-option -t 'term-\(id.uuidString)' status off"))
         XCTAssertTrue(command.contains("exec tmux attach-session"))
         XCTAssertFalse(command.contains("\r"))
         XCTAssertFalse(command.contains("\n"))

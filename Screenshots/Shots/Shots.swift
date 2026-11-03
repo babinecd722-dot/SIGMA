@@ -26,8 +26,8 @@ final class Shots: XCTestCase {
         XCTAssertTrue(trust.waitForExistence(timeout: 60), app.debugDescription)
         trust.tap()
         waitForText("SHOT_READY")
-        assertCleanTerminal()
         shot("01-connected-dark")
+        assertCleanTerminal()
 
         terminal.tap()
         let tips = app.buttons["Continue"].firstMatch
@@ -75,6 +75,11 @@ final class Shots: XCTestCase {
 
         tap("workspaceMenu")
         tap("Reconnect")
+        let connected = NSPredicate(format: "value == %@", "Connected")
+        let status = app.descendants(matching: .any)["activeSessionStatus"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 15))
+        let online = XCTNSPredicateExpectation(predicate: connected, object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [online], timeout: 30), .completed)
         waitForText("row-50") // tmux retained the existing shell
         assertCleanTerminal()
         terminal.tap()

@@ -397,20 +397,31 @@ private struct PendingWatcher: View {
     }
 }
 
-/// Rotation is driven by the display timeline, so disappearing rows
-/// and changes to Reduce Motion cannot leave a queued animation behind.
+/// SwiftUI owns the repeating phase. Removing the indicator or enabling
+/// Reduce Motion ends it immediately, without deferred animation tasks.
 private struct ConnectRing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
-            Circle()
-                .trim(from: 0, to: 0.72)
-                .stroke(Color.terminalAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .frame(width: 46, height: 46)
-                .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360))
+        Group {
+            if reduceMotion {
+                ring
+            } else {
+                ring.phaseAnimator([false, true]) { content, rotated in
+                    content.rotationEffect(.degrees(rotated ? 360 : 0))
+                } animation: { rotated in
+                    rotated ? .linear(duration: 1.2) : nil
+                }
+            }
         }
         .accessibilityHidden(true)
+    }
+
+    private var ring: some View {
+        Circle()
+            .trim(from: 0, to: 0.72)
+            .stroke(Color.terminalAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .frame(width: 46, height: 46)
     }
 }
 
