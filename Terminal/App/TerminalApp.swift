@@ -7,7 +7,7 @@ struct TerminalApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            TerminalWindowView()
                 .environmentObject(appState)
                 .environmentObject(appState.profiles)
                 .environmentObject(appState.keys)
@@ -16,7 +16,6 @@ struct TerminalApp: App {
                 .environmentObject(appState.settings)
                 .environmentObject(appState.engine)
                 .environmentObject(appState.keepAlive)
-                .preferredColorScheme(preferredScheme)
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -47,8 +46,21 @@ struct TerminalApp: App {
         }
     }
 
-    private var preferredScheme: ColorScheme? {
-        switch appState.settings.settings.appearance {
+}
+
+/// Observe the store that owns appearance directly. Observing AppState
+/// does not subscribe to changes in its nested stores.
+struct TerminalWindowView: View {
+    @EnvironmentObject private var settings: SettingsStore
+
+    var body: some View {
+        RootView().preferredColorScheme(settings.settings.appearance.colorScheme)
+    }
+}
+
+extension AppSettings.Appearance {
+    var colorScheme: ColorScheme? {
+        switch self {
         case .dark: return .dark
         case .light: return .light
         case .system: return nil

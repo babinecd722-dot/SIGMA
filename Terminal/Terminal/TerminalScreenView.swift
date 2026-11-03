@@ -46,22 +46,24 @@ struct TerminalScreenView: View {
         // screen edges so no dark corners show around the keyboard.
         .background(activeTheme.background.ignoresSafeArea(.container))
         .toolbarBackground(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) {
+        .overlay(alignment: .top) {
             if showsStatus {
                 statusBadge
-                    .animation(.spring(duration: 0.3), value: session.state)
             }
         }
         .onChange(of: session.state) { _, new in
             if new == .online { Haptics.connected() }
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                HStack(spacing: 8) {
-                    StatusDot(state: StatusDot.State(session.state))
-                    Text(session.title)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
+            // Hidden tabs must not compete for the navigation title.
+            if isActive {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        StatusDot(state: StatusDot.State(session.state))
+                        Text(session.title)
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
+                    }
                 }
             }
         }
@@ -151,8 +153,7 @@ struct TerminalScreenView: View {
             .padding(.vertical, 8)
             .terminalGlass(cornerRadius: 19)
             .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
-            .transition(.move(edge: .top).combined(with: .opacity))
-            .padding(.top, 2)
+            .padding(.top, 8)
     }
 
     private func badgeButton(_ glyph: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {

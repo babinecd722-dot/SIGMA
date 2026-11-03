@@ -30,17 +30,18 @@ struct RootView: View {
     /// the next server waiting in the queue.
     @State private var hostKeyAnsweredByButton = false
     @ObservedObject private var transferManager = TransferManager.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
         ZStack {
             if engine.sessions.contains(where: { $0.reachedOnline }) {
-                workspace
+                workspace.transition(.opacity)
             } else {
                 // A still-connecting tab never flashes a blank
                 // terminal — the list stays up, its icon ring spins,
                 // and only a reached-online session switches over.
-                HostsListView()
+                HostsListView().transition(.opacity)
             }
             // Inline, not a cover — host-key and password prompts must
             // be able to appear above it during the first connect.
@@ -50,6 +51,7 @@ struct RootView: View {
                     .zIndex(1)
             }
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: engine.sessions.contains(where: { $0.reachedOnline }))
         .sheet(isPresented: $showSessionPicker) {
             SessionPickerSheet()
         }

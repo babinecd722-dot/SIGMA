@@ -55,7 +55,7 @@ def patch(checkouts):
         "AsyncIterator(iterator: sequence.makeAsyncIterator(), channel: channel)")
     replace_once(tty,
         "        mode: CommandMode\n    ) async throws -> (channel: Channel, output:",
-        "        mode: CommandMode,\n        paced: Bool = false\n    ) async throws -> (channel: Channel, output:")
+        "        mode: CommandMode,\n        paced: Bool = false,\n        ptyCommand: String? = nil\n    ) async throws -> (channel: Channel, output:")
     replace_once(tty,
         "                channel.pipeline.addHandlers(handler)",
         """                channel.pipeline.addHandlers(handler).flatMap {
@@ -63,7 +63,32 @@ def patch(checkouts):
                 }""")
     replace_once(tty,
         "            mode: .pty(request)\n",
-        "            mode: .pty(request), paced: true\n")
+        "            mode: .pty(request), paced: true, ptyCommand: command\n")
+    replace_once(tty,
+        """    public func withPTY(
+        _ request: SSHChannelRequestEvent.PseudoTerminalRequest,
+        environment:""",
+        """    public func withPTY(
+        _ request: SSHChannelRequestEvent.PseudoTerminalRequest,
+        command: String? = nil,
+        environment:""")
+    replace_once(tty,
+        """        case .pty(let request):
+            try await channel.triggerUserOutboundEvent(request)
+            fallthrough""",
+        """        case .pty(let request):
+            try await channel.triggerUserOutboundEvent(request)
+            if let command = ptyCommand {
+                // SSH exec starts inside the PTY without ever entering
+                // the interactive shell's echo, scrollback or history.
+                try await channel.triggerUserOutboundEvent(SSHChannelRequestEvent.ExecRequest(
+                    command: command, wantReply: true
+                ))
+            } else {
+                try await channel.triggerUserOutboundEvent(SSHChannelRequestEvent.ShellRequest(
+                    wantReply: true
+                ))
+            }""")
     replace_once(tty,
         """        do {
             let inbound = TTYOutput(sequence: output)

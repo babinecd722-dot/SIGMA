@@ -78,6 +78,7 @@ private struct ThemeCardView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("theme-" + theme.id)
         .accessibilityLabel(theme.displayName)
     }
 }
@@ -111,6 +112,7 @@ private struct AutoThemeCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("theme-auto")
         .accessibilityLabel("Auto")
     }
 

@@ -1,167 +1,150 @@
 import XCTest
 import UIKit
 
-/// Drives the real app through its screens while the workflow takes
-/// `simctl io` screenshots. Sync is one-way: the test prints
-/// `SHOT:<name>` / `APPEAR:light` to the runner log, then holds the
-/// state for a fixed window so the capture always lands inside it.
+/// Regression against a real SSH server and tmux. Every screenshot is
+/// attached to the result bundle; a missing control fails the test.
 final class Shots: XCTestCase {
-
     private var app: XCUIApplication!
 
     override func setUp() {
-        continueAfterFailure = true
+        continueAfterFailure = false
         app = XCUIApplication(bundleIdentifier: "com.terminal.app")
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
     }
 
-    // MARK: - Flow
-
-    func testFlow() {
+    func testAppearanceAndCleanStartup() throws {
         app.launch()
-        nap(5)
-        shot("01-onboarding")
-
-        // The connect form — fields are found by placeholder/label.
-        // 127.0.0.1, not localhost: a ::1 resolution while sshd listens
-        // on IPv4 only would fail before the host-key stage.
-        type(into: ["server.example.com", "Host"], "127.0.0.1")
-        type(into: ["root", "Username"], "shotbot")
-        type(into: ["Optional", "Password"], "Term1n4lSh0ts", secure: true)
-
-        // Tap the hero to drop focus, then connect.
+        field("server.example.com").typeText("127.0.0.1")
+        field("root").typeText("shotbot")
+        let password = app.secureTextFields["Optional"].firstMatch
+        XCTAssertTrue(password.waitForExistence(timeout: 10))
+        password.tap()
+        password.typeText("Term1n4lSh0ts")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
-        nap(1)
-        tapAny(["connectButton", "Connect"])
-
-        // If the stored credential didn't reach the keychain, the app
-        // asks again — fill the retry dialog so the flow continues.
-        let retryField = app.secureTextFields.firstMatch
-        if retryField.waitForExistence(timeout: 6) {
-            retryField.tap()
-            nap(1)
-            retryField.typeText("Term1n4lSh0ts")
-            nap(1)
-            tapAny(["Connect"])
-        }
-
-        // Host-key trust dialog.
+        tap("connectButton")
         let trust = app.buttons["Trust"].firstMatch
-        if trust.waitForExistence(timeout: 60) {
-            nap(2)
-            trust.tap()
-        } else {
-            NSLog("NO-TRUST-DIALOG")
+        XCTAssertTrue(trust.waitForExistence(timeout: 60), app.debugDescription)
+        trust.tap()
+        waitForText("SHOT_READY")
+        assertCleanTerminal()
+        shot("01-connected-dark")
+
+        terminal.tap()
+        let tips = app.buttons["Continue"].firstMatch
+        if tips.waitForExistence(timeout: 2) { tips.tap() }
+        app.typeText("printf 'USER_COMMAND_OK\\n'\n")
+        waitForText("USER_COMMAND_OK")
+        app.typeText("for i in {1..50}; do echo row-$i; done\n")
+        waitForText("row-50")
+        hideKeyboard()
+        terminal.swipeDown()
+        assertCleanTerminal()
+        shot("02-scrollback")
+        terminal.swipeUp()
+
+        // Change appearance while the app stays foregrounded. The
+        // terminal must repaint immediately, including its blank cells.
+        for (index, appearance) in ["Light", "Dark", "Light"].enumerated() {
+            openSettings()
+            tap("appearancePicker")
+            tap(appearance)
+            shot("03-settings-\(index)-\(appearance.lowercased())")
+            dismissSettings()
+            XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+            let light = try terminalBackgroundBrightness()
+            if appearance == "Light" { XCTAssertGreaterThan(light, 0.85) }
+            else { XCTAssertLessThan(light, 0.2) }
+            assertCleanTerminal()
+            shot("04-terminal-\(index)-\(appearance.lowercased())")
         }
 
-        nap(20)
-        shot("02-terminal")
+        // Explicit terminal palettes also update an existing buffer.
+        openSettings()
+        tap("Theme")
+        tap("theme-graphite")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        dismissSettings()
+        XCTAssertLessThan(try terminalBackgroundBrightness(), 0.25)
+        openSettings()
+        tap("Theme")
+        tap("theme-paper")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        dismissSettings()
+        XCTAssertGreaterThan(try terminalBackgroundBrightness(), 0.85)
+        shot("05-paper")
 
-        // Summon the keyboard to show the accessory bar.
-        app.descendants(matching: .any)["terminalSurface"].firstMatch.tap()
-        nap(2)
-        // iOS can overlay its slide-to-type tutorial the first time the
-        // keyboard appears — dismiss it so the accessory shows.
-        let tipsContinue = app.buttons["Continue"].firstMatch
-        if tipsContinue.waitForExistence(timeout: 4) {
-            tipsContinue.tap()
-            nap(2)
-        }
-        shot("03-keyboard")
-
-        // Type a command so the shell isn't empty in the shot.
-        app.typeText("uname -a\n")
-        nap(4)
-        shot("04-terminal-live")
-
-        // SFTP file browser through the workspace menu.
-        for key in ["hide keyboard", "Hide keyboard", "keyboard.chevron.compact.down"] {
-            let b = app.keyboards.buttons[key].firstMatch
-            if b.exists { b.tap(); break }
-        }
-        nap(1)
-        tapAny(["workspaceMenu", "ellipsis.circle", "More"])
-        nap(1)
-        tapAny(["Files"])
-        nap(12)
-        shot("05-files")
-
-        // Dismiss the sheet, close the session, land on hosts.
-        app.descendants(matching: .any)["filesBrowser"].firstMatch.swipeDown()
-        nap(2)
-        tapAny(["workspaceMenu", "ellipsis.circle", "More"])
-        nap(1)
-        tapAny(["Close"])
-        nap(2)
-        shot("06-hosts")
-
-        tapAny(["settingsButton", "gearshape"])
-        nap(2)
-        shot("07-settings")
-
-        tapAny(["Theme", "paintpalette"])
-        nap(2)
-        shot("08-theme-picker")
-
-        // Light mode: workflow flips simulator appearance on the marker.
-        announce("APPEAR:light")
-        nap(6)
-        app.navigationBars.buttons.element(boundBy: 0).tap() // back to settings
-        nap(1)
-        app.swipeDown() // close the sheet
-        nap(2)
-        shot("09-hosts-light")
-
-        // Onboarding once more, now in light — the argument-domain
-        // default overrides the stored flag without wiping data.
-        app.terminate()
-        let light = XCUIApplication(bundleIdentifier: "com.terminal.app")
-        light.launchArguments = ["-onboarding.done", "NO"]
-        light.launch()
-        nap(4)
-        shot("10-onboarding-light")
+        tap("workspaceMenu")
+        tap("Reconnect")
+        waitForText("row-50") // tmux retained the existing shell
+        assertCleanTerminal()
+        terminal.tap()
+        app.typeText("history\n")
+        sleep(1)
+        assertCleanTerminal() // setup must not enter server-side history
+        hideKeyboard()
+        shot("06-reconnected-light")
     }
 
-    // MARK: - Sync
+    private var terminal: XCUIElement { app.descendants(matching: .any)["terminalSurface"].firstMatch }
 
-    /// Mark a screenshot point, then hold the state for the workflow's
-    /// log-tail + `simctl io` latency.
+    private func field(_ name: String) -> XCUIElement {
+        let element = app.textFields[name].firstMatch
+        XCTAssertTrue(element.waitForExistence(timeout: 15), app.debugDescription)
+        element.tap()
+        return element
+    }
+
+    private func tap(_ id: String) {
+        let element = app.buttons[id].firstMatch
+        XCTAssertTrue(element.waitForExistence(timeout: 15), "Missing \(id): \(app.debugDescription)")
+        element.tap()
+    }
+
+    private func waitForText(_ text: String) {
+        XCTAssertTrue(terminal.waitForExistence(timeout: 60), app.debugDescription)
+        let predicate = NSPredicate { [weak self] _, _ in
+            (self?.terminal.value as? String)?.contains(text) == true
+        }
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 30), .completed, app.debugDescription)
+    }
+
+    private func assertCleanTerminal() {
+        let text = terminal.value as? String ?? ""
+        XCTAssertFalse(text.contains("tmux new-session"), text)
+        XCTAssertFalse(text.contains("tmux attach"), text)
+        XCTAssertFalse(text.contains("term-"), text)
+    }
+
+    private func openSettings() { tap("workspaceMenu"); tap("Settings") }
+
+    private func dismissSettings() {
+        app.navigationBars["Settings"].swipeDown()
+        XCTAssertTrue(app.buttons["workspaceMenu"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+
+    private func hideKeyboard() {
+        let button = app.buttons["Hide keyboard"].firstMatch
+        if button.exists { button.tap() }
+    }
+
+    private func terminalBackgroundBrightness() throws -> Double {
+        // Sample blank cells below the prompt, away from bars and text.
+        sleep(1)
+        let image = terminal.screenshot().image
+        let cg = try XCTUnwrap(image.cgImage)
+        let crop = try XCTUnwrap(cg.cropping(to: CGRect(x: cg.width / 2, y: cg.height * 3 / 4, width: 8, height: 8)))
+        var rgba = [UInt8](repeating: 0, count: 8 * 8 * 4)
+        let context = try XCTUnwrap(CGContext(data: &rgba, width: 8, height: 8, bitsPerComponent: 8,
+            bytesPerRow: 32, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: 8, height: 8))
+        return (0..<64).reduce(0.0) { $0 + Double(rgba[$1 * 4]) + Double(rgba[$1 * 4 + 1]) + Double(rgba[$1 * 4 + 2]) } / (64 * 3 * 255)
+    }
+
     private func shot(_ name: String) {
-        announce("SHOT:\(name)")
-        nap(10)
-    }
-
-    private func announce(_ marker: String) {
-        FileHandle.standardError.write(Data((marker + "\n").utf8))
-        NSLog("%@", marker)
-    }
-
-    // MARK: - Helpers
-
-    private func nap(_ seconds: UInt32) { sleep(seconds) }
-
-    private func tapAny(_ ids: [String]) {
-        for id in ids {
-            let el = app.buttons[id].firstMatch
-            if el.waitForExistence(timeout: 3) { el.tap(); return }
-        }
-        for id in ids {
-            let el = app.descendants(matching: .any)[id].firstMatch
-            if el.waitForExistence(timeout: 2) && el.isHittable { el.tap(); return }
-        }
-        NSLog("TAP-MISS %@", ids.joined(separator: ","))
-    }
-
-    private func type(into ids: [String], _ text: String, secure: Bool = false) {
-        let fields = secure ? app.secureTextFields : app.textFields
-        for id in ids {
-            let el = fields[id].firstMatch
-            if el.waitForExistence(timeout: 4) {
-                el.tap()
-                nap(1)
-                el.typeText(text)
-                return
-            }
-        }
-        NSLog("FIELD-MISS %@", ids.joined(separator: ","))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

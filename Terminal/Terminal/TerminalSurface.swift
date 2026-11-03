@@ -15,8 +15,8 @@ struct TerminalSurface: UIViewRepresentable {
     var isActive = true
 
     func makeUIView(context: Context) -> TerminalView {
-        let view = TerminalView(frame: .zero)
-        applyStyle(view)
+        let view = AccessibleTerminalView(frame: .zero)
+        Self.applyStyle(view, fontSize: fontSize, theme: theme)
         view.terminalDelegate = context.coordinator
         view.inputAccessoryView = accessory
         view.backgroundColor = theme.uiBackground
@@ -30,7 +30,7 @@ struct TerminalSurface: UIViewRepresentable {
         // glyph re-layout — skip when nothing actually changed.
         let signature = Coordinator.StyleSignature(fontSize: fontSize, themeID: theme.id)
         if context.coordinator.appliedStyle != signature {
-            applyStyle(view)
+            Self.applyStyle(view, fontSize: fontSize, theme: theme)
             context.coordinator.appliedStyle = signature
         }
         // reloadInputViews on an unchanged accessory steals/represents
@@ -66,8 +66,17 @@ struct TerminalSurface: UIViewRepresentable {
         coordinator.detach()
     }
 
-    private func applyStyle(_ view: TerminalView) {
-        view.font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+    static func applyStyle(_ view: TerminalView, fontSize: Double, theme: TerminalTheme) {
+        // A color change must not reset font metrics, selection or PTY size.
+        if view.font.pointSize != fontSize {
+            view.font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        }
+        let style: UIUserInterfaceStyle = theme.id == "paper" ? .light : .dark
+        view.overrideUserInterfaceStyle = style
+        view.keyboardAppearance = style == .light ? .light : .dark
+        view.indicatorStyle = style == .light ? .black : .white
+        view.inputAccessoryView?.overrideUserInterfaceStyle = style
+        view.backgroundColor = theme.uiBackground
         view.nativeBackgroundColor = theme.uiBackground
         view.nativeForegroundColor = theme.uiForeground
         view.caretColor = theme.uiCursor
@@ -76,7 +85,6 @@ struct TerminalSurface: UIViewRepresentable {
         // Theme selection tint — the default teal ignored the palette.
         view.selectedTextBackgroundColor = UIColor(theme.selection)
         view.selectedTextForegroundColor = theme.uiForeground
-        view.backgroundColor = theme.uiBackground
         view.installColors(theme.ansiColors)
         view.setNeedsDisplay()
     }
@@ -87,6 +95,7 @@ struct TerminalSurface: UIViewRepresentable {
     /// keyboard or read a dead terminal's cursor mode.
     private static func wireAccessory(_ view: TerminalView, coordinator: Coordinator) {
         guard let bar = view.inputAccessoryView as? KeyboardAccessoryView else { return }
+        bar.overrideUserInterfaceStyle = view.overrideUserInterfaceStyle
         bar.onHide = { [weak view, weak coordinator] in
             // An explicit hide is not a tab-switch resign — don't
             // resurrect the keyboard on the next activation.
@@ -212,5 +221,14 @@ struct TerminalSurface: UIViewRepresentable {
         func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
 
         func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+    }
+}
+
+/// VoiceOver reads the current viewport on demand, without copying
+/// scrollback on each output packet or publishing it outside the view.
+final class AccessibleTerminalView: TerminalView {
+    override var accessibilityValue: String? {
+        get { visibleRowsText(0..<terminalDimensions.rows).joined(separator: "\n") }
+        set { }
     }
 }

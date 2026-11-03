@@ -46,13 +46,15 @@ struct SettingsView: View {
                         rowLabel("Appearance", icon: "circle.lefthalf.filled")
                     }
 
+                    .accessibilityIdentifier("appearancePicker")
+
                     NavigationLink {
                         ThemePickerView()
                     } label: {
                         HStack {
                             rowLabel("Theme", icon: "paintpalette")
                             Spacer()
-                            Text(TerminalTheme.theme(id: settings.settings.themeID).displayName)
+                            Text(settings.settings.themeID == "auto" ? String(localized: "Auto") : TerminalTheme.theme(id: settings.settings.themeID).displayName)
                                 .foregroundStyle(.secondary)
                         }
                     }

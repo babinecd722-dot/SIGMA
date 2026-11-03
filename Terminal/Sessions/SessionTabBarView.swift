@@ -4,6 +4,7 @@ import SwiftUI
 /// plus create / overview affordances. State is glyph-only.
 struct SessionTabBarView: View {
     @EnvironmentObject private var engine: SessionEngine
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let onNewSession: () -> Void
 
@@ -23,9 +24,12 @@ struct SessionTabBarView: View {
                     }
                     .padding(.horizontal, 6)
                 }
+                .onAppear {
+                    if let id = engine.activeSessionID { proxy.scrollTo(id, anchor: .center) }
+                }
                 .onChange(of: engine.activeSessionID) { _, id in
                     guard let id else { return }
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                         proxy.scrollTo(id, anchor: .center)
                     }
                 }
@@ -74,7 +78,7 @@ private struct SessionPillView: View {
                     .lineLimit(1)
             }
             .padding(.horizontal, 12)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 Capsule(style: .continuous)
                     .fill(Color.primary.opacity(isActive ? 0.16 : 0))

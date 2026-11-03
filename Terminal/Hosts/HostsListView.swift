@@ -294,6 +294,10 @@ struct HostsListView: View {
         Haptics.tap()
         if let live = liveSession(for: profile) {
             engine.activeSessionID = live.id
+            switch live.state {
+            case .failed, .offline: live.reconnect()
+            default: break
+            }
             dismiss()
             return
         }
@@ -395,23 +399,16 @@ private struct PendingWatcher: View {
 /// Watches a pending session and reports state transitions plus the
 private struct ConnectRing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var spinning = false
 
     var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
         Circle()
             .trim(from: 0, to: 0.72)
             .stroke(Color.terminalAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
             .frame(width: 46, height: 46)
-            .rotationEffect(.degrees(spinning ? 360 : 0))
-            .onAppear {
-                guard !reduceMotion else { return }
-                spinning = false
-                DispatchQueue.main.async {
-                    withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-                        spinning = true
-                    }
-                }
-            }
+            .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360))
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -419,8 +416,8 @@ private struct ConnectRing: View {
 struct HostRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.55 : 1)
-            .animation(.spring(duration: 0.25), value: configuration.isPressed)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

@@ -71,7 +71,7 @@ actor ShellChannel {
 
     // MARK: - Lifecycle
 
-    func open(on client: Citadel.SSHClient, cols: Int, rows: Int) async throws {
+    func open(on client: Citadel.SSHClient, cols: Int, rows: Int, command: String? = nil) async throws {
         targetCols = max(1, cols)
         targetRows = max(1, rows)
         targetSeq += 1
@@ -87,7 +87,7 @@ actor ShellChannel {
 
         task = Task { [weak self] in
             do {
-                try await client.withPTY(request) { inbound, outbound in
+                try await client.withPTY(request, command: command) { inbound, outbound in
                     await self?.attach(writer: outbound)
                     for try await item in inbound {
                         switch item {

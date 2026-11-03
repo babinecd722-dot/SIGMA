@@ -275,10 +275,10 @@ actor SSHConnection {
 
     // MARK: - Channels
 
-    func openShell(cols: Int, rows: Int) async throws -> ShellChannel {
+    func openShell(cols: Int, rows: Int, command: String? = nil) async throws -> ShellChannel {
         try await withTransport { client in
             let shell = ShellChannel()
-            try await shell.open(on: client, cols: cols, rows: rows)
+            try await shell.open(on: client, cols: cols, rows: rows, command: command)
             return shell
         }
     }

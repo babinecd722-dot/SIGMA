@@ -18,7 +18,6 @@ struct StatusDot: View {
     }
 
     let state: State
-    @SwiftUI.State private var pulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(state: State) {
@@ -35,22 +34,12 @@ struct StatusDot: View {
     }
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 8, height: 8)
-            .opacity(animates && pulse ? 0.35 : 1)
-            .animation(
-                animates
-                    ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
-                    : .default,
-                value: pulse
-            )
-            .onAppear {
-                guard animates else { return }
-                pulse = false
-                DispatchQueue.main.async { pulse = true }
-            }
-            .onChange(of: animates) { _, on in pulse = on }
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !animates)) { context in
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+                .opacity(animates ? 0.7 + 0.3 * cos(context.date.timeIntervalSinceReferenceDate * .pi / 0.9) : 1)
+        }
             .accessibilityLabel(Text("Status"))
             .accessibilityValue(Text(state.accessibilityText))
     }

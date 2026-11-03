@@ -142,19 +142,7 @@ final class TerminalSession: ObservableObject, Identifiable {
         }
     }
 
-    /// Bytes of our own internal commands still awaiting their PTY
-    /// echo — a queue, one entry per silent send, so a chunk carrying
-    /// the first echo plus unrelated bytes can't leak the command:
-    /// matched bytes are excised, everything else passes through.
-    private var pendingEchoes: [Data] = []
-    private var echoDeadline = Date.distantPast
-    /// Bytes of the current echo already matched, across packet boundaries.
-    private var echoHold = Data()
-
-    /// Queues output for the next frame batch; with no view attached it
-    /// lands in the bounded tail buffer instead. The setup command is
-    /// removed even when its echo is split across SSH packets, so a
-    /// later scroll never reveals `tmux new-session`.
+    /// Queue raw remote output; setup is an SSH exec request, never PTY input.
     private func deliverOutput(_ data: Data, gen: Int) async {
         while onOutput != nil, feedBuffer.count >= Self.maxFeedBuffer,
               !isTerminated, gen == connectGeneration, !Task.isCancelled {
@@ -171,7 +159,6 @@ final class TerminalSession: ObservableObject, Identifiable {
             }
         }
         guard !isTerminated, gen == connectGeneration, !Task.isCancelled else { return }
-        let data = stripSetupEcho(data)
         guard !data.isEmpty else { return }
         if onOutput != nil {
             feedBuffer.append(data)
@@ -180,48 +167,6 @@ final class TerminalSession: ObservableObject, Identifiable {
             pendingOutput.append(data)
             trimPendingOutput()
         }
-    }
-
-    /// Drops the setup command even when the PTY splits its echo across
-    /// packets. Unrelated bytes (the prompt, MOTD) pass through.
-    private func stripSetupEcho(_ data: Data) -> Data {
-        if !pendingEchoes.isEmpty, Date() > echoDeadline {
-            let leaked = echoHold
-            echoHold.removeAll()
-            pendingEchoes.removeAll()
-            var out = leaked
-            out.append(data)
-            return out
-        }
-        guard !pendingEchoes.isEmpty else { return data }
-        var out = Data()
-        out.reserveCapacity(data.count)
-        for byte in data {
-            guard let echo = pendingEchoes.first else {
-                out.append(byte)
-                continue
-            }
-            let matched = echoHold.count
-            let next = echo.index(echo.startIndex, offsetBy: matched)
-            if next < echo.endIndex, echo[next] == byte {
-                echoHold.append(byte)
-                if echoHold.count == echo.count {
-                    echoHold.removeAll()
-                    pendingEchoes.removeFirst()
-                }
-            } else if !echoHold.isEmpty {
-                out.append(echoHold)
-                echoHold.removeAll()
-                if let echo = pendingEchoes.first, echo.first == byte {
-                    echoHold.append(byte)
-                } else {
-                    out.append(byte)
-                }
-            } else {
-                out.append(byte)
-            }
-        }
-        return out
     }
 
     private func releaseOutputWaiters() {
@@ -367,7 +312,15 @@ final class TerminalSession: ObservableObject, Identifiable {
         // watchers see a live reconnect instead of an abandoned one.
         engine?.clearPasswordPrompt(for: self)
         do {
-            let shell = try await connection.openShell(cols: cols, rows: rows)
+            let probe = await engine?.probeHost(self)
+            try Task.checkCancellation()
+            guard !isTerminated, gen == connectGeneration else { return }
+            let launch = ShellLaunchPlan(
+                sessionID: id,
+                useTmux: profile.autoTmux && settings.settings.autoTmux && probe?.hasTmux == true,
+                shellOverride: settings.settings.shellOverride
+            )
+            let shell = try await connection.openShell(cols: cols, rows: rows, command: launch.command)
             guard !isTerminated, !Task.isCancelled, gen == connectGeneration else {
                 await shell.close()
                 return
@@ -386,21 +339,12 @@ final class TerminalSession: ObservableObject, Identifiable {
             retryAttempt = 0
             retryBudgetSpent = false
             engine?.clearPasswordPrompt(for: self)
-            // One exec round-trip learns tmux + OS — before the tab
-            // goes live and before the attach is written, so nothing
-            // typed meanwhile glues onto our wiring.
-            let probe = await engine?.probeHost(self)
-            guard !isTerminated, !Task.isCancelled, gen == connectGeneration else {
-                await shell.close()
-                return
-            }
             consume(shell, gen: gen)
             // The new channel gets the current size even if the PTY
             // request already carried it — resizes that failed on the
             // dead channel are replayed here.
             enqueueResize()
-            sendShellOverride(gen: gen)
-            attachTmux(gen: gen, available: probe?.hasTmux == true)
+            tmuxAttached = launch.usesTmux
             reachedOnline = true
             state = .online
         } catch {
@@ -428,8 +372,6 @@ final class TerminalSession: ObservableObject, Identifiable {
         consumeTask = nil
         modifiers.reset()
         shellEnding = false
-        echoHold.removeAll()
-        pendingEchoes.removeAll()
     }
 
     /// A failed attempt only publishes when it is still the current
@@ -590,23 +532,6 @@ final class TerminalSession: ObservableObject, Identifiable {
         scheduleRetry()
     }
 
-    /// Each tab keeps its own tmux session (named per tab), so parallel
-    /// tabs never fight over one attach. The command is a plain `;`
-    /// chain — no `||` after attach, or a normal `exit` would respawn
-    /// a fresh tmux forever. `status off` lands before the attach, so
-    /// the green status bar never flashes into view.
-    private func attachTmux(gen: Int, available: Bool) {
-        guard profile.autoTmux, settings.settings.autoTmux, available,
-              !isTerminated, gen == connectGeneration, !Task.isCancelled else { return }
-        let name = "term-\(id.uuidString)"
-        tmuxAttached = true
-        // `exec` before attach: when the tmux session ends (exit from
-        // the last pane) there is no login shell left to fall back to —
-        // the channel closes, and the tab retires into the server list
-        // instead of reviving a bare prompt behind the user's back.
-        sendSilently("tmux new-session -d -s \(Self.shQuote(name)) 2>/dev/null; tmux set-option -t \(Self.shQuote(name)) status off; exec tmux attach -t \(Self.shQuote(name))\r")
-    }
-
     /// What one exec round-trip learns about the remote. `hasTmux` is
     /// nil when the probe itself failed — a timed-out exec must not be
     /// cached as "no tmux" and orphan the server-side session forever.
@@ -656,24 +581,6 @@ final class TerminalSession: ObservableObject, Identifiable {
         return out
     }
 
-    /// `exec` replaces the login shell with the configured override.
-    /// Path AND every argument are POSIX-quoted individually — a field
-    /// like `zsh -l` must reach the remote as exactly two arguments,
-    /// never interpolated into shell metacharacters or re-splits.
-    private func sendShellOverride(gen: Int) {
-        let override = settings.settings.shellOverride.trimmingCharacters(in: .whitespaces)
-        guard !override.isEmpty, gen == connectGeneration, !isTerminated else { return }
-        let parts = Self.shellWords(override)
-        guard !parts.isEmpty else { return }
-        sendSilently("exec \(parts.map(Self.shQuote).joined(separator: " "))\r")
-    }
-
-    /// Whitespace-split into words — an override is "path plus flags",
-    /// each token quoted separately downstream.
-    private static func shellWords(_ command: String) -> [String] {
-        command.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-    }
-
     /// POSIX single-quote: the only metachar that survives is ' itself,
     /// which is closed, escaped and reopened.
     static func shQuote(_ s: String) -> String {
@@ -713,22 +620,6 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// carriage return, and a bare LF is not how a terminal submits.
     func send(_ string: String) {
         send(Self.crNormalize([UInt8](string.utf8))[...])
-    }
-
-    /// Internal wiring (tmux attach, shell override): goes through the
-    /// same ordered chain, but the PTY's echo of these bytes is queued
-    /// for suppression — the terminal shows none of it.
-    func sendSilently(_ string: String) {
-        let bytes = Self.crNormalize([UInt8](string.utf8))
-        var echo = Data()
-        for b in bytes {
-            echo.append(b)
-            // A CR echoes back as CRLF on a cooked pty.
-            if b == 0x0D { echo.append(0x0A) }
-        }
-        pendingEchoes.append(echo)
-        echoDeadline = Date().addingTimeInterval(3)
-        send(bytes[...])
     }
 
     /// Typed input: sticky Ctrl/Alt apply here, semantically — Ctrl is
