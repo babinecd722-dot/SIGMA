@@ -231,6 +231,10 @@ struct TerminalSurface: UIViewRepresentable {
 /// VoiceOver reads the current viewport on demand, without copying
 /// scrollback on each output packet or publishing it outside the view.
 final class AccessibleTerminalView: TerminalView {
+    override func accessibilityActivate() -> Bool {
+        becomeFirstResponder()
+    }
+
     override var accessibilityValue: String? {
         get { visibleRowsText(0..<terminalDimensions.rows).joined(separator: "\n") }
         set { }

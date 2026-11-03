@@ -31,6 +31,23 @@ def patch(checkouts):
         text = text.replace("flameLowerPath.dropFirst()", "Array(flameLowerPath.dropFirst())")
     write_source(powerline, text)
 
+    ios_terminal = checkouts / "SwiftTerm/Sources/SwiftTerm/iOS/iOSTerminalView.swift"
+    replace_once(ios_terminal,
+        """            _ = forwardTap(at: gestureRecognizer.location(in: self))
+            return
+        }
+
+        guard isFirstResponder else {""",
+        """            _ = forwardTap(at: gestureRecognizer.location(in: self))
+            // Terminal's phone UI uses one tap to open the keyboard,
+            // including tmux/TUIs that enable mouse reporting. Keep the
+            // remote click as well; do not consume it just for focus.
+            _ = becomeFirstResponder()
+            return
+        }
+
+        guard isFirstResponder else {""")
+
     tty = checkouts / "Citadel/Sources/Citadel/TTY/Client/TTY.swift"
     replace_once(tty,
         "    internal let sequence: AsyncThrowingStream<ExecCommandOutput, Error>",

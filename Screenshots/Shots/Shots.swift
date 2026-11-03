@@ -115,6 +115,9 @@ final class Shots: XCTestCase {
         waitForText("row-50") // tmux retained the existing shell
         assertCleanTerminal()
         terminal.tap()
+        // Leaving tmux copy mode restores command entry after scrolling.
+        let escape = app.buttons["Escape"].firstMatch
+        if escape.waitForExistence(timeout: 3), escape.isHittable { escape.tap() }
         app.typeText("history\n")
         sleep(1)
         assertCleanTerminal() // setup must not enter server-side history

@@ -117,7 +117,8 @@ jobs:
           # Give the real interactive shell a predictable prompt and history.
           printf 'export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"\n' | sudo tee /Users/shotbot/.zshenv >/dev/null
           printf 'HISTFILE=~/.zsh_history\nHISTSIZE=1000\nSAVEHIST=1000\nPROMPT="shotbot %% "\nprintf "SHOT_READY\\n"\n' | sudo tee /Users/shotbot/.zshrc >/dev/null
-          sudo chown shotbot:staff /Users/shotbot/.zshenv /Users/shotbot/.zshrc
+          printf 'set -g mouse on\n' | sudo tee /Users/shotbot/.tmux.conf >/dev/null
+          sudo chown shotbot:staff /Users/shotbot/.zshenv /Users/shotbot/.zshrc /Users/shotbot/.tmux.conf
           sudo dscl . -passwd /Users/shotbot 'Term1n4lSh0ts' \
             || printf 'Term1n4lSh0ts\n' | sudo dscl . -passwd /Users/shotbot
           ssh-keygen -q -t ed25519 -N '' -f build/ssh_host_ed25519_key
