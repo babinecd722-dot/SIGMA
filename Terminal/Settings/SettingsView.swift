@@ -23,9 +23,6 @@ struct SettingsView: View {
         if settings.settings.shellOverride != shellDraft {
             settings.settings.shellOverride = shellDraft
         }
-        // A presented sheet owns its color-scheme preference. Update it
-        // directly while the user changes appearance inside this sheet.
-        .preferredColorScheme(settings.settings.appearance.colorScheme)
     }
 
     var body: some View {
@@ -191,6 +188,9 @@ struct SettingsView: View {
             Button("OK") {}
         }
         }
+        // A presented sheet owns its color-scheme preference. Update it
+        // directly while the user changes appearance inside this sheet.
+        .preferredColorScheme(settings.settings.appearance.colorScheme)
     }
 
     /// Settings-style row: accent rounded square with a white glyph + title.
