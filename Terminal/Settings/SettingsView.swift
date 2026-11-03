@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Settings sheet. Grouped form on a dark surface, accent chips
-/// for glyphs — no explanatory copy anywhere.
+/// Settings sheet with a grouped form and accent glyphs.
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var settings: SettingsStore
@@ -24,6 +23,9 @@ struct SettingsView: View {
         if settings.settings.shellOverride != shellDraft {
             settings.settings.shellOverride = shellDraft
         }
+        // A presented sheet owns its color-scheme preference. Update it
+        // directly while the user changes appearance inside this sheet.
+        .preferredColorScheme(settings.settings.appearance.colorScheme)
     }
 
     var body: some View {
