@@ -193,6 +193,7 @@ struct RootView: View {
                         .zIndex(session.id == engine.activeSessionID ? 1 : 0)
                 }
             }
+            .background(Color.terminalSurface.ignoresSafeArea(.container))
             // Inset, not overlay — terminal content must never slide
             // under the tab bar.
             .safeAreaInset(edge: .bottom, spacing: 0) {

@@ -41,10 +41,10 @@ struct TerminalScreenView: View {
         )
         .accessibilityIdentifier("terminalSurface")
         .accessibilityHidden(!isActive)
-        // Chrome insets reserve space — the surface itself never draws
-        // under the tab bar, and the theme color still reaches the
-        // screen edges so no dark corners show around the keyboard.
-        .background(activeTheme.background.ignoresSafeArea(.container))
+        // The palette colors the terminal, while navigation and tabs
+        // follow app appearance. A pinned light palette in a dark app
+        // must not put white toolbar labels on a white background.
+        .background(activeTheme.background)
         .toolbarBackground(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
             if showsStatus {
