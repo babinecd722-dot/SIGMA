@@ -139,6 +139,11 @@ struct TerminalSurface: UIViewRepresentable {
             self.session = session
             self.view = view
             self.modifiers = modifiers
+            (view as? AccessibleTerminalView)?.onProtocolResponse = { [weak session] bytes in
+                // Terminal protocol replies must bypass sticky Ctrl/Alt
+                // and the line-ending normalization for typed text.
+                session?.send(bytes[...])
+            }
             claimOutput(on: view)
             // Hide/cursor-mode target THIS terminal — re-wired on every
             // attach because the cached bar may point at an old view.
@@ -158,6 +163,7 @@ struct TerminalSurface: UIViewRepresentable {
         }
 
         func detach() {
+            (view as? AccessibleTerminalView)?.onProtocolResponse = nil
             if let view {
                 session?.detachOutput(owner: view)
             }
@@ -234,6 +240,15 @@ struct TerminalSurface: UIViewRepresentable {
 /// VoiceOver reads the current viewport on demand, without copying
 /// scrollback on each output packet or publishing it outside the view.
 final class AccessibleTerminalView: TerminalView {
+    var onProtocolResponse: (@MainActor ([UInt8]) -> Void)?
+
+    nonisolated override func send(source: SwiftTerm.Terminal, data: ArraySlice<UInt8>) {
+        let bytes = Array(data)
+        DispatchQueue.main.async { [weak self] in
+            self?.onProtocolResponse?(bytes)
+        }
+    }
+
     override func accessibilityActivate() -> Bool {
         becomeFirstResponder()
     }

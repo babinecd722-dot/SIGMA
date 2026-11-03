@@ -75,9 +75,11 @@ final class TerminalAppearanceTests: XCTestCase {
 
     @MainActor
     func testRemoteApplicationsReceiveCurrentColorScheme() async throws {
-        let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        let view = AccessibleTerminalView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         let replies = TerminalReplyRecorder()
-        view.terminalDelegate = replies
+        let typedInput = TerminalReplyRecorder()
+        view.terminalDelegate = typedInput
+        view.onProtocolResponse = { replies.bytes.append(contentsOf: $0) }
         view.feed(text: "\u{1b}[?2031h") // subscribe to appearance changes
         try await Task.sleep(for: .milliseconds(100))
         for theme in [TerminalTheme.paper, .pro, .paper] {
@@ -90,6 +92,10 @@ final class TerminalAppearanceTests: XCTestCase {
             XCTAssertEqual(output.components(separatedBy: reply).count - 1, 2,
                 "Both the subscribed notification and query must report the palette: \(output.debugDescription)")
         }
+        XCTAssertTrue(typedInput.bytes.isEmpty, "Protocol replies must bypass sticky keyboard modifiers")
+        view.send(txt: "x")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(typedInput.bytes, [UInt8(ascii: "x")], "Typed keys must retain their own input path")
     }
 
     @MainActor

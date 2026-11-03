@@ -3,7 +3,6 @@ name: iOS
 on:
   push:
     branches: [main, 'fix/**']
-    paths-ignore: ['Screenshots/**', '.github/workflows/screenshots.yml']
   pull_request:
   workflow_dispatch:
   release:
@@ -18,9 +17,9 @@ permissions:
 
 jobs:
   build:
-    name: Build unsigned IPA
+    name: Verify terminal and build IPA
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -30,11 +29,12 @@ jobs:
           xcodebuild -version
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: brew install xcodegen tmux
 
       - name: Generate project
         run: |
           xcodegen
+          (cd Screenshots && xcodegen)
           mkdir -p Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
           cp Package.resolved Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
@@ -56,6 +56,16 @@ jobs:
             -resolvePackageDependencies
           python3 scripts/patch_dependencies.py build/SourcePackages/checkouts
 
+      - name: Compile UI regression runner
+        run: |
+          xcodebuild -quiet build-for-testing \
+            -project Screenshots/Shots.xcodeproj \
+            -scheme Shots \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/UITests \
+            ONLY_ACTIVE_ARCH=YES ARCHS="$(uname -m)" \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+
       - name: Test Release on iPhone Simulator (two iterations)
         run: |
           set -o pipefail
@@ -64,6 +74,7 @@ jobs:
             -project Terminal.xcodeproj \
             -scheme Terminal \
             -configuration Release \
+            -derivedDataPath build \
             -destination "platform=iOS Simulator,id=$DEVICE" \
             -parallel-testing-enabled NO \
             -test-iterations 2 \
@@ -97,12 +108,120 @@ jobs:
             build/simulator-tests.log
           if-no-files-found: ignore
 
+      - name: Boot simulator + install
+        run: |
+          set -e
+          xcrun simctl shutdown all || true
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "
+          import json,sys
+          rs=[r for r in json.load(sys.stdin)['runtimes'] if r['platform']=='iOS' and r.get('isAvailable',True)]
+          rs.sort(key=lambda r:[int(x) for x in r['version'].split('-')[0].split('.')],reverse=True)
+          print(rs[0]['identifier'])")
+          echo "runtime: $RUNTIME"
+          UDID=$(xcrun simctl create shots com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$RUNTIME" 2>/dev/null \
+            || xcrun simctl create shots com.apple.CoreSimulator.SimDeviceType.iPhone-15 "$RUNTIME" \
+            || xcrun simctl create shots com.apple.CoreSimulator.SimDeviceType.iPhone-14 "$RUNTIME")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance dark
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/Terminal.app
+
+      - name: Enable local SSH server
+        run: |
+          # Dedicated account: setting a password on a fresh user needs
+          # no old-password credentials (unlike changing `runner`'s).
+          if ! sudo dscl . -read /Users/shotbot >/dev/null 2>&1; then
+            sudo dscl . -create /Users/shotbot
+            sudo dscl . -create /Users/shotbot UserShell /bin/zsh
+            sudo dscl . -create /Users/shotbot RealName "Shot Bot"
+            sudo dscl . -create /Users/shotbot UniqueID 555
+            sudo dscl . -create /Users/shotbot PrimaryGroupID 20
+            sudo dscl . -create /Users/shotbot NFSHomeDirectory /Users/shotbot
+            sudo mkdir -p /Users/shotbot
+            sudo chown shotbot:staff /Users/shotbot
+            echo hello > /tmp/shotbot-marker
+            sudo cp /tmp/shotbot-marker /Users/shotbot/welcome.txt
+            sudo chown shotbot:staff /Users/shotbot/welcome.txt
+          fi
+          if sudo dscl . -read /Groups/com.apple.access_ssh >/dev/null 2>&1; then
+            sudo dseditgroup -o edit -a shotbot -t user com.apple.access_ssh
+          fi
+          # Give the real interactive shell a predictable prompt and history.
+          printf 'export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"\n' | sudo tee /Users/shotbot/.zshenv >/dev/null
+          printf 'HISTFILE=~/.zsh_history\nHISTSIZE=1000\nSAVEHIST=1000\nPROMPT="shotbot %% "\nprintf "SHOT_READY\\n"\n' | sudo tee /Users/shotbot/.zshrc >/dev/null
+          printf 'set -g mouse on\n' | sudo tee /Users/shotbot/.tmux.conf >/dev/null
+          sudo chown shotbot:staff /Users/shotbot/.zshenv /Users/shotbot/.zshrc /Users/shotbot/.tmux.conf
+          sudo dscl . -passwd /Users/shotbot 'Term1n4lSh0ts' \
+            || printf 'Term1n4lSh0ts\n' | sudo dscl . -passwd /Users/shotbot
+          ssh-keygen -q -t ed25519 -N '' -f build/ssh_host_ed25519_key
+          cat > build/sshd_config <<EOF
+          Port 22222
+          ListenAddress 127.0.0.1
+          HostKey $PWD/build/ssh_host_ed25519_key
+          PidFile $PWD/build/sshd.pid
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication no
+          AuthenticationMethods password
+          UsePAM yes
+          PermitRootLogin no
+          AllowUsers shotbot
+          LoginGraceTime 60
+          LogLevel VERBOSE
+          EOF
+          sudo /usr/sbin/sshd -t -f "$PWD/build/sshd_config"
+          sudo /usr/sbin/sshd -f "$PWD/build/sshd_config" -E "$PWD/build/sshd.log"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            nc -z 127.0.0.1 22222 && break || sleep 1
+          done
+          nc -z 127.0.0.1 22222
+
+      - name: Verify foreground appearance, scrollback, history and reconnect
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Screenshots/Shots.xcodeproj \
+            -scheme Shots \
+            -derivedDataPath build/UITests \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 1200 \
+            -maximum-test-execution-time-allowance 1500 \
+            -resultBundlePath build/ui-tests.xcresult \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee test.log
+
+      - name: Stop local SSH fixture
+        if: always()
+        run: |
+          if [ -f build/sshd.pid ]; then sudo kill "$(cat build/sshd.pid)" || true; fi
+          if [ -f build/sshd.log ]; then sudo cat build/sshd.log > build/ssh-fixture.log; fi
+
+      - name: Export screenshots
+        if: always() && hashFiles('build/ui-tests.xcresult/Info.plist') != ''
+        run: |
+          mkdir -p shots
+          xcrun xcresulttool export attachments --path build/ui-tests.xcresult --output-path shots || true
+
+      - name: Upload screenshots and test results
+        if: always() && hashFiles('build/ui-tests.xcresult/Info.plist') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: |
+            shots/
+            build/ui-tests.xcresult
+            test.log
+            build/ssh-fixture.log
+          retention-days: 30
+
       - name: Archive (unsigned)
         run: |
           xcodebuild -quiet \
             -project Terminal.xcodeproj \
             -scheme Terminal \
             -configuration Release \
+            -derivedDataPath build \
             -destination 'generic/platform=iOS' \
             -archivePath build/Terminal.xcarchive \
             -skipPackagePluginValidation \
