@@ -171,8 +171,9 @@ final class Shots: XCTestCase {
     }
 
     private func dismissPasswordSaveOffer() {
+        guard let application = app else { return }
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for owner in [springboard, app] {
+        for owner in [springboard, application] {
             let notNow = owner.buttons["Not Now"].firstMatch
             if notNow.waitForExistence(timeout: 2), notNow.isHittable { notNow.tap() }
         }
