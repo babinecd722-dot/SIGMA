@@ -33,6 +33,21 @@ def patch(checkouts):
 
     ios_terminal = checkouts / "SwiftTerm/Sources/SwiftTerm/iOS/iOSTerminalView.swift"
     replace_once(ios_terminal,
+        """        // Global reverse video needs an opaque background for its swapped text color.
+        if reverseColorsActiveValue() {
+            effectiveNativeBackgroundColor.setFill()
+            context.fill(dirtyRect)
+        }""",
+        """        // Paint opaque themes into the backing store as well as the
+        // layer. Clearing default cells alone can expose black pixels
+        // after iOS scroll-view blits or a live appearance change.
+        // Keep the original transparent path for translucent terminals.
+        let backdrop = effectiveNativeBackgroundColor
+        if reverseColorsActiveValue() || (backgroundOpacity >= 1 && backdrop.cgColor.alpha >= 1) {
+            backdrop.setFill()
+            context.fill(dirtyRect)
+        }""")
+    replace_once(ios_terminal,
         """            _ = forwardTap(at: gestureRecognizer.location(in: self))
             return
         }
@@ -141,6 +156,9 @@ def patch(checkouts):
     start = text.index("final class ClientHandshakeHandler:")
     end = text.index("\npublic struct SSHClientSettings:", start)
     handler = Path(__file__).with_name("citadel_handshake.swift").read_text().rstrip()
+    prefix = handler[:handler.index("final class ClientHandshakeHandler:")]
+    while prefix and text[:start].endswith(prefix):
+        start -= len(prefix)
     write_source(session, text[:start] + handler + "\n" + text[end:])
     replace_once(session,
         """            loginTimeout: .seconds(10)

@@ -71,11 +71,11 @@ final class Shots: XCTestCase {
             shot("03-settings-\(index)-\(appearance.lowercased())")
             dismissSettings()
             XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+            shot("04-terminal-\(index)-\(appearance.lowercased())")
             let light = try terminalBackgroundBrightness()
             if appearance == "Light" { XCTAssertGreaterThan(light, 0.85) }
             else { XCTAssertLessThan(light, 0.2) }
             assertCleanTerminal()
-            shot("04-terminal-\(index)-\(appearance.lowercased())")
         }
 
         // Explicit terminal palettes also update an existing buffer.

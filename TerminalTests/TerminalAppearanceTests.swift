@@ -40,6 +40,23 @@ final class TerminalAppearanceTests: XCTestCase {
             assertColor(view.nativeBackgroundColor, equals: theme.uiBackground)
             assertColor(view.nativeForegroundColor, equals: theme.uiForeground)
             assertColor(UIColor(cgColor: try XCTUnwrap(view.layer.backgroundColor)), equals: theme.uiBackground)
+            // Check the pixels draw(_:) paints, not just the stored
+            // properties: transparent blank cells looked black in the
+            // scrolling terminal even with the correct layer color.
+            let rendered = UIGraphicsImageRenderer(size: view.bounds.size).image { _ in
+                view.draw(view.bounds)
+            }
+            let cg = try XCTUnwrap(rendered.cgImage)
+            let blank = try XCTUnwrap(cg.cropping(to: CGRect(x: cg.width / 2, y: cg.height * 3 / 4, width: 1, height: 1)))
+            var pixel = [UInt8](repeating: 0, count: 4)
+            try pixel.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                    bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(blank, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            }
+            XCTAssertEqual(pixel[3], 255, "Blank cells must paint the opaque theme")
+            assertColor(UIColor(red: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255,
+                blue: CGFloat(pixel[2]) / 255, alpha: CGFloat(pixel[3]) / 255), equals: theme.uiBackground)
             XCTAssertEqual(view.keyboardAppearance, theme.id == "paper" ? .light : .dark)
             XCTAssertTrue(view.accessibilityValue?.contains("Visible text") == true)
             XCTAssertTrue(view.accessibilityValue?.contains("Red") == true)
