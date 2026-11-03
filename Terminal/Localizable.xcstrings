@@ -2546,6 +2546,46 @@
           }
         }
       }
+    },
+    "First connection to %@:%@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Первое подключение к %@:%@"
+          }
+        }
+      }
+    },
+    "First connection to %@:%@\n%@\n%@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Первое подключение к %@:%@\n%@\n%@"
+          }
+        }
+      }
+    },
+    "The identity of %@:%@ changed — verify the new fingerprint out of band.": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Идентификатор %@:%@ изменился — сверьте новый отпечаток по другому каналу."
+          }
+        }
+      }
+    },
+    "The identity of %@:%@ changed — verify the new fingerprint out of band.\n%@\nWas: %@\nNow: %@": {
+      "localizations": {
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Идентификатор %@:%@ изменился — сверьте новый отпечаток по другому каналу.\n%@\nБыл: %@\nСтал: %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

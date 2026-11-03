@@ -5,6 +5,7 @@ final class ClientHandshakeHandler: ChannelInboundHandler, Sendable {
     private struct DeadlineState {
         var timer: Scheduled<Void>?
         var finished = false
+        var paused = false
     }
     private let deadline = NIOLockedValueBox(DeadlineState())
     private let promise: EventLoopPromise<Void>
@@ -30,15 +31,17 @@ final class ClientHandshakeHandler: ChannelInboundHandler, Sendable {
 
     func pauseTimeout() {
         deadline.withLockedValue {
+            $0.paused = true
             $0.timer?.cancel()
             $0.timer = nil
         }
     }
 
     func resumeTimeout() {
+        deadline.withLockedValue { $0.paused = false }
         eventLoop.execute { [deadline, eventLoop, loginTimeout, promise] in
             deadline.withLockedValue { state in
-                guard !state.finished else { return }
+                guard !state.finished, !state.paused else { return }
                 state.timer?.cancel()
                 state.timer = eventLoop.scheduleTask(in: loginTimeout) {
                     promise.fail(ChannelError.connectTimeout(loginTimeout))

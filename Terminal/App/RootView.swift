@@ -405,14 +405,14 @@ struct RootView: View {
     private var hostKeyMessage: Text {
         switch pendingHostKey {
         case .unknown(let host, let port, let keyLine, let fingerprint):
-            return Text("First connection to \(host):\(port)")
+            return Text("First connection to \(host):\(String(port))")
                 + Text("\n")
                 + Text(verbatim: Self.keyAlgorithm(of: keyLine))
                 + Text("\n")
                 + Text(verbatim: fingerprint)
                     .font(.system(.footnote, design: .monospaced))
         case .changed(let host, let port, let keyLine, let expected, let fingerprint):
-            return Text("The identity of \(host):\(port) changed — verify the new fingerprint out of band.")
+            return Text("The identity of \(host):\(String(port)) changed — verify the new fingerprint out of band.")
                 + Text("\n")
                 + Text(verbatim: Self.keyAlgorithm(of: keyLine))
                 + Text("\n")

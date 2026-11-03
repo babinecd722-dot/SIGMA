@@ -10,6 +10,12 @@ final class Shots: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication(bundleIdentifier: "com.terminal.app")
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        addUIInterruptionMonitor(withDescription: "System password save offer") { alert in
+            let notNow = alert.buttons["Not Now"].firstMatch
+            guard notNow.exists else { return false }
+            notNow.tap()
+            return true
+        }
     }
 
     func testAppearanceAndCleanStartup() throws {
@@ -22,12 +28,23 @@ final class Shots: XCTestCase {
         password.typeText("Term1n4lSh0ts")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
         tap("connectButton")
+        dismissPasswordSaveOffer()
         let trust = app.buttons["Trust"].firstMatch
         XCTAssertTrue(trust.waitForExistence(timeout: 60), app.debugDescription)
         // A person can read the fingerprint for longer than Citadel's
         // former ten-second login timeout before making a decision.
         sleep(12)
+        dismissPasswordSaveOffer()
+        // Trigger the interruption monitor if Passwords presented its
+        // sheet after the app's own host-key alert became accessible.
+        if !trust.isHittable { app.tap() }
+        XCTAssertTrue(trust.waitForExistence(timeout: 10))
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == YES"), object: trust)
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 10), .completed)
+        shot("00-host-key")
         trust.tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == NO"), object: trust)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 10), .completed)
         waitForText("SHOT_READY")
         shot("01-connected-dark")
         assertCleanTerminal()
@@ -151,6 +168,14 @@ final class Shots: XCTestCase {
     private func hideKeyboard() {
         let button = app.buttons["Hide keyboard"].firstMatch
         if button.exists { button.tap() }
+    }
+
+    private func dismissPasswordSaveOffer() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for owner in [springboard, app] {
+            let notNow = owner.buttons["Not Now"].firstMatch
+            if notNow.waitForExistence(timeout: 2), notNow.isHittable { notNow.tap() }
+        }
     }
 
     private func terminalBackgroundBrightness() throws -> Double {

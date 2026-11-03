@@ -80,6 +80,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.terminal.app.tests
     dependencies:
       - target: Terminal
+      - package: Citadel
+        product: Citadel
+      - package: NIO
+        product: NIOEmbedded
 
 schemes:
   Terminal:
