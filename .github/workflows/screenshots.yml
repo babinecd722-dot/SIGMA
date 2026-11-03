@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: screenshots-${{ github.ref }}
+  group: terminal-ui-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
