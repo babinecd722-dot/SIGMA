@@ -1,0 +1,126 @@
+name: iOS
+
+on:
+  push:
+    branches: [main, 'fix/**']
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [created]
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: |
+          xcodegen
+          mkdir -p Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          cp Package.resolved Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+      - name: Cache packages
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-v2-${{ hashFiles('project.yml', 'Package.resolved', 'scripts/patch_dependencies.py') }}-${{ runner.os }}
+
+      - name: Resolve pinned dependencies and apply reviewed patches
+        run: |
+          xcodebuild \
+            -project Terminal.xcodeproj \
+            -scheme Terminal \
+            -destination 'generic/platform=iOS' \
+            -skipPackagePluginValidation \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            -resolvePackageDependencies
+          python3 scripts/patch_dependencies.py build/SourcePackages/checkouts
+
+      - name: Test on iPhone Simulator (two iterations)
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(d["udid"] for ds in json.load(sys.stdin)["devices"].values() for d in ds if d["name"].startswith("iPhone")))')
+          xcodebuild test \
+            -project Terminal.xcodeproj \
+            -scheme Terminal \
+            -destination "platform=iOS Simulator,id=$DEVICE" \
+            -parallel-testing-enabled NO \
+            -test-iterations 2 \
+            -resultBundlePath build/tests.xcresult \
+            -skipPackagePluginValidation \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: build/tests.xcresult
+          if-no-files-found: ignore
+
+      - name: Archive (unsigned)
+        run: |
+          xcodebuild \
+            -project Terminal.xcodeproj \
+            -scheme Terminal \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Terminal.xcarchive \
+            -skipPackagePluginValidation \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
+
+      - name: Package IPA + TIPA
+        run: |
+          mkdir -p Payload
+          cp -R "build/Terminal.xcarchive/Products/Applications/Terminal.app" Payload/
+          zip -qry Terminal.ipa Payload
+          cp Terminal.ipa Terminal.tipa
+          ls -lh Terminal.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Terminal-ipa
+          path: |
+            Terminal.ipa
+            Terminal.tipa
+          retention-days: 30
+
+  release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Terminal-ipa
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Terminal.ipa
+            Terminal.tipa

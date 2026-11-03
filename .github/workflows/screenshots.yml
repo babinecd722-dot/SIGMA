@@ -1,0 +1,151 @@
+name: Screenshots
+
+on:
+  workflow_dispatch
+
+jobs:
+  shots:
+    name: Drive app in Simulator, capture screens
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate projects
+        run: |
+          xcodegen
+          (cd Screenshots && xcodegen)
+          mkdir -p Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          cp Package.resolved Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+      - name: Resolve pinned dependencies and apply reviewed patches
+        run: |
+          xcodebuild \
+            -project Terminal.xcodeproj \
+            -scheme Terminal \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            -resolvePackageDependencies
+          python3 scripts/patch_dependencies.py build/SourcePackages/checkouts
+
+      - name: Build app for Simulator
+        run: |
+          xcodebuild \
+            -project Terminal.xcodeproj \
+            -scheme Terminal \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          ls build/Build/Products/Debug-iphonesimulator/Terminal.app
+
+      - name: Boot simulator + install
+        run: |
+          set -e
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "
+          import json,sys
+          rs=[r for r in json.load(sys.stdin)['runtimes'] if r['platform']=='iOS' and r.get('isAvailable',True)]
+          rs.sort(key=lambda r:[int(x) for x in r['version'].split('-')[0].split('.')],reverse=True)
+          print(rs[0]['identifier'])")
+          echo "runtime: $RUNTIME"
+          UDID=$(xcrun simctl create shots com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$RUNTIME" 2>/dev/null \
+            || xcrun simctl create shots com.apple.CoreSimulator.SimDeviceType.iPhone-15 "$RUNTIME" \
+            || xcrun simctl create shots com.apple.CoreSimulator.SimDeviceType.iPhone-14 "$RUNTIME")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/Terminal.app
+
+      - name: Enable local SSH server
+        run: |
+          sudo systemsetup -setremotelogin on 2>/dev/null \
+            || sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist 2>/dev/null \
+            || sudo launchctl bootstrap system/ /System/Library/LaunchDaemons/ssh.plist
+          # Dedicated account: setting a password on a fresh user needs
+          # no old-password credentials (unlike changing `runner`'s).
+          if ! sudo dscl . -read /Users/shotbot >/dev/null 2>&1; then
+            sudo dscl . -create /Users/shotbot
+            sudo dscl . -create /Users/shotbot UserShell /bin/zsh
+            sudo dscl . -create /Users/shotbot RealName "Shot Bot"
+            sudo dscl . -create /Users/shotbot UniqueID 555
+            sudo dscl . -create /Users/shotbot PrimaryGroupID 20
+            sudo dscl . -create /Users/shotbot NFSHomeDirectory /Users/shotbot
+            sudo mkdir -p /Users/shotbot
+            sudo chown shotbot:staff /Users/shotbot
+            echo hello > /tmp/shotbot-marker
+            sudo cp /tmp/shotbot-marker /Users/shotbot/welcome.txt
+            sudo chown shotbot:staff /Users/shotbot/welcome.txt
+          fi
+          sudo dscl . -passwd /Users/shotbot 'Term1n4lSh0ts' \
+            || printf 'Term1n4lSh0ts\n' | sudo dscl . -passwd /Users/shotbot
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            nc -z 127.0.0.1 22 && break || sleep 2
+          done
+          nc -z 127.0.0.1 22 && echo "sshd up"
+          # Which families is sshd actually on? The app must reach a
+          # listener on whichever address its resolver picks first.
+          nc -z ::1 22 && echo "sshd: ipv6 ok" || echo "sshd: ipv4 only"
+          exec 3<>/dev/tcp/127.0.0.1/22 && head -c 40 <&3 && exec 3<&- && echo
+
+      - name: Drive UI + capture screenshots
+        run: |
+          mkdir -p shots
+          xcodebuild test \
+            -project Screenshots/Shots.xcodeproj \
+            -scheme Shots \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -skipPackagePluginValidation \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO \
+            > test.log 2>&1 &
+          TPID=$!
+          (
+            tail -f test.log | while IFS= read -r line; do
+              case "$line" in
+                *SHOT:*)
+                  name=$(echo "$line" | sed -n 's/.*SHOT:\([a-z0-9-]*\).*/\1/p' | head -1)
+                  if [ -n "$name" ]; then
+                    sleep 2
+                    xcrun simctl io "$UDID" screenshot "shots/$name.png"
+                    echo "captured $name"
+                  fi
+                  ;;
+                *APPEAR:light*)
+                  xcrun simctl ui "$UDID" appearance light
+                  echo "appearance -> light"
+                  ;;
+              esac
+            done
+          ) &
+          WATCH=$!
+          RESULT=0
+          wait $TPID || RESULT=$?
+          kill $WATCH 2>/dev/null || true
+          pkill -f "tail -f test.log" 2>/dev/null || true
+          ls -la shots/
+          exit "$RESULT"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: |
+            shots/*.png
+            test.log
+          retention-days: 30

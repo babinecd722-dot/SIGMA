@@ -1,0 +1,315 @@
+import SwiftUI
+
+/// First-run screen: what the app is, then a plain labeled form —
+/// no ssh syntax knowledge required. Inline in RootView so host-key
+/// and password prompts can layer above it.
+struct OnboardingView: View {
+    @EnvironmentObject var profiles: ProfilesStore
+    @EnvironmentObject var engine: SessionEngine
+    @AppStorage("onboarding.done") private var done = false
+
+    @State private var host = ""
+    @State private var port = "22"
+    @State private var username = ""
+    @State private var password = ""
+    @State private var profileSaveFailed = false
+    /// A profile whose store write failed — the alert's OK still
+    /// completes the connect so the warning always reaches the user.
+    @State private var pendingConnect: ServerProfile?
+    @FocusState private var focus: Field?
+
+    private enum Field { case host, port, username, password }
+
+    /// Most recently used first.
+    private var recent: [ServerProfile] {
+        Array(
+            profiles.profiles
+                .sorted { ($0.lastConnected ?? .distantPast) > ($1.lastConnected ?? .distantPast) }
+                .prefix(4)
+        )
+    }
+
+    private var valid: Bool {
+        !host.trimmingCharacters(in: .whitespaces).isEmpty
+            && !username.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 26) {
+                    hero
+                        .padding(.top, 26)
+
+                    formCard
+
+                    Button {
+                        connect()
+                    } label: {
+                        Text("Connect")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(.terminalAccent)
+                    .accessibilityIdentifier("connectButton")
+                    .disabled(!valid)
+                    .padding(.horizontal, 24)
+
+                    if !recent.isEmpty {
+                        recentCard
+                    }
+
+                    Button("Set up later") {
+                        done = true
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 30)
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+            .onTapGesture { focus = nil }
+            .alert("Couldn't save the server — it won't be there next launch", isPresented: $profileSaveFailed) {
+                Button("OK") {
+                    guard let profile = pendingConnect else { return }
+                    pendingConnect = nil
+                    done = true
+                    engine.openSession(for: profile, cols: 80, rows: 24)
+                }
+            }
+        }
+    }
+
+    // MARK: - Hero
+
+    /// The icon's motif, alive: a black squircle with a `>` prompt and
+    /// a blinking block cursor — the whole app in one glance.
+    private var hero: some View {
+        VStack(spacing: 16) {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(Color(red: 0.06, green: 0.06, blue: 0.07))
+                .frame(width: 96, height: 96)
+                .overlay {
+                    HStack(spacing: 5) {
+                        Text(">")
+                            .font(.system(size: 30, weight: .bold, design: .monospaced))
+                        BlinkingCursor()
+                    }
+                    .foregroundStyle(.white)
+                }
+                .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
+
+            Text("Terminal")
+                .font(.title.weight(.bold))
+
+            HStack(spacing: 22) {
+                featureGlyph("apple.terminal")
+                featureGlyph("folder")
+                featureGlyph("arrow.left.arrow.right")
+            }
+        }
+    }
+
+    private func featureGlyph(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(Color.terminalAccent)
+            .frame(width: 44, height: 44)
+            .terminalGlass(cornerRadius: 13)
+    }
+
+    // MARK: - Form
+
+    private var formCard: some View {
+        VStack(spacing: 0) {
+            field("Host", text: $host, focused: .host,
+                  placeholder: "server.example.com",
+                  submit: { focus = .username })
+            Divider().padding(.leading, 16)
+            field("Username", text: $username, focused: .username,
+                  placeholder: "root",
+                  submit: { focus = .port })
+            Divider().padding(.leading, 16)
+            field("Port", text: $port, focused: .port,
+                  placeholder: "22", numeric: true,
+                  submit: { focus = .password })
+            Divider().padding(.leading, 16)
+            field("Password", text: $password, focused: .password,
+                  placeholder: "Optional", secure: true,
+                  submit: connect)
+        }
+        .terminalGlass(cornerRadius: 16)
+        .padding(.horizontal, 24)
+    }
+
+    private func field(_ title: LocalizedStringKey, text: Binding<String>, focused: Field,
+                       placeholder: LocalizedStringKey, secure: Bool = false,
+                       numeric: Bool = false, submit: @escaping () -> Void) -> some View {
+        LabeledContent {
+            Group {
+                if secure {
+                    SecureField(placeholder, text: text)
+                } else {
+                    TextField(placeholder, text: text)
+                }
+            }
+            .multilineTextAlignment(.trailing)
+            .font(.system(.body, design: .monospaced))
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(numeric ? .numberPad : .URL)
+            .submitLabel(.next)
+            .focused($focus, equals: focused)
+            .onSubmit(submit)
+        } label: {
+            Text(title)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+    }
+
+    // MARK: - Existing servers
+
+    private var recentCard: some View {
+        VStack(spacing: 0) {
+            ForEach(recent) { profile in
+                Button {
+                    connect(profile)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "server.rack")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.terminalAccent)
+                        Text(profile.displayName)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(HostRowStyle())
+
+                if profile.id != recent.last?.id {
+                    Divider().padding(.leading, 44)
+                }
+            }
+
+            Divider().padding(.leading, 16)
+
+            // Browsing servers counts as "set up" — without this,
+            // closing the pushed view's last tab resurrected onboarding.
+            NavigationLink {
+                HostsListView(embeddedInStack: true)
+            } label: {
+                HStack {
+                    Text("Servers")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .simultaneousGesture(TapGesture().onEnded { done = true })
+        }
+        .terminalGlass(cornerRadius: 16)
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: - Connect
+
+    private func connect() {
+        var profile = ServerProfile()
+        var rawHost = host.trimmingCharacters(in: .whitespaces)
+        var rawUser = username.trimmingCharacters(in: .whitespaces)
+
+        // A pasted "user@host[:port]" or ssh:// line in the host field
+        // still works — split it apart instead of rejecting the paste.
+        if rawHost.contains("@") || rawHost.contains(":") || rawHost.contains(" "),
+           let parsed = QuickConnectParser.parse(rawHost, profiles: profiles.profiles) {
+            rawHost = parsed.profile.host
+            if rawUser.isEmpty { rawUser = parsed.profile.username }
+            // Writing back into the field keeps the parsed port —
+            // the unconditional Int(port) below would otherwise
+            // overwrite it with the default.
+            if port == "22" { port = String(parsed.profile.port) }
+            if password.isEmpty, let pw = parsed.password { password = pw }
+        }
+
+        profile.host = rawHost
+        profile.username = rawUser
+        if let p = Int(port), (1...65535).contains(p) { profile.port = p }
+        profile.auth = .password
+
+        guard !profile.host.isEmpty, !profile.username.isEmpty else {
+            Haptics.failed()
+            return
+        }
+        if !password.isEmpty {
+            let status = Keychain.save(password, tag: "password.\(profile.id.uuidString)")
+            if status != errSecSuccess {
+                // The connect below will ask for the password anyway.
+                // Routed to the root alert — an in-view alert dies with
+                // the view the moment `done` flips, and the raw
+                // OSStatus never reaches the UI.
+                engine.reportError(
+                    String(localized: "Couldn't store the password — you'll be asked for it when connecting")
+                )
+            }
+        }
+        connect(profile)
+    }
+
+    /// Save BEFORE `done` flips — an alert raised after dismissal
+    /// would die with the view. On failure the alert's OK completes
+    /// the connect via `pendingConnect`.
+    private func connect(_ profile: ServerProfile) {
+        Haptics.tap()
+        guard profiles.save(profile) else {
+            Haptics.failed()
+            pendingConnect = profile
+            profileSaveFailed = true
+            return
+        }
+        done = true
+        engine.openSession(for: profile, cols: 80, rows: 24)
+    }
+}
+
+/// A block cursor that blinks, like the real thing.
+private struct BlinkingCursor: View {
+    @State private var visible = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(Color.white)
+            .frame(width: 17, height: 30)
+            .opacity(visible ? 1 : 0)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.53).repeatForever(autoreverses: true)) {
+                    visible = false
+                }
+            }
+    }
+}
+
+struct OnboardingView_Previews: PreviewProvider {
+    static var previews: some View {
+        OnboardingView()
+            .environmentObject(ProfilesStore())
+            .environmentObject(AppState().engine)
+    }
+}

@@ -1,0 +1,123 @@
+import SwiftUI
+
+/// Transfer queue sheet: linear progress per row, done rows dimmed
+/// with a checkmark, finished rows swipe away.
+struct TransfersView: View {
+    @ObservedObject private var manager = TransferManager.shared
+    @Environment(\.dismiss) private var dismiss
+    @ScaledMetric private var iconSize: CGFloat = 34
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if manager.transfers.isEmpty {
+                    EmptyState(symbol: "arrow.up.arrow.down", text: String(localized: "No transfers"))
+                } else {
+                    List(manager.transfers) { transfer in
+                        row(transfer)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparatorTint(Color.primary.opacity(0.08))
+                            .swipeActions(edge: .trailing) {
+                                if transfer.state.isActive {
+                                    Button(role: .destructive) {
+                                        manager.cancel(transfer.id)
+                                    } label: {
+                                        Label("Cancel", systemImage: "stop.circle")
+                                    }
+                                } else {
+                                    Button(role: .destructive) {
+                                        manager.remove(transfer.id)
+                                    } label: {
+                                        Label("Remove", systemImage: "xmark")
+                                    }
+                                    if !transfer.isUpload, transfer.localURL != nil {
+                                        Button(role: .destructive) {
+                                            manager.removeAndDeleteFile(transfer.id)
+                                        } label: {
+                                            Label("Delete File", systemImage: "trash")
+                                        }
+                                    }
+                                }
+                            }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .background(Color.terminalSurface.ignoresSafeArea())
+            .navigationTitle("Transfers")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if manager.transfers.contains(where: { !$0.state.isActive }) {
+                        Button("Clear") {
+                            manager.clearFinished()
+                            Haptics.tap()
+                        }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func row(_ transfer: TransferManager.Transfer) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: transfer.isUpload ? "arrow.up" : "arrow.down")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Color.terminalAccent)
+                .frame(width: iconSize, height: iconSize)
+                .background(Color.terminalAccent.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(transfer.name)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                switch transfer.state {
+                case .queued:
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Color.terminalAccent)
+                case .running:
+                    ProgressView(value: transfer.progress)
+                        .tint(Color.terminalAccent)
+                case .done:
+                    Text("Done")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .failed:
+                    Text("Couldn't finish")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .cancelled:
+                    Text("Cancelled")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Group {
+                switch transfer.state {
+                case .done:
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                case .failed:
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red.opacity(0.75))
+                case .cancelled:
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                case .queued, .running:
+                    EmptyView()
+                }
+            }
+            .accessibilityHidden(true)
+        }
+        .padding(.vertical, 3)
+        .opacity(transfer.state == .done ? 0.55 : 1)
+    }
+}
