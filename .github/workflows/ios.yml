@@ -69,8 +69,7 @@ jobs:
             -clonedSourcePackagesDirPath build/SourcePackages \
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGN_ENTITLEMENTS="$(pwd)/ci/Simulator.entitlements"
+            CODE_SIGN_IDENTITY=-
 
       - name: Upload test results
         if: always()
