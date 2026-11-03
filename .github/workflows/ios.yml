@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/SourcePackages
-          key: spm-v2-${{ hashFiles('project.yml', 'Package.resolved', 'scripts/patch_dependencies.py') }}-${{ runner.os }}
+          key: spm-v2-${{ hashFiles('project.yml', 'Package.resolved', 'scripts/patch_dependencies.py', 'scripts/citadel_handshake.swift') }}-${{ runner.os }}
 
       - name: Resolve pinned dependencies and apply reviewed patches
         run: |
@@ -76,6 +76,7 @@ jobs:
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=YES \
             ENABLE_TESTABILITY=YES \
+            ONLY_ACTIVE_ARCH=YES ARCHS="$(uname -m)" \
             CODE_SIGN_IDENTITY=- | tee build/simulator-tests.log
 
       - name: Summarize Simulator tests

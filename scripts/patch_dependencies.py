@@ -119,6 +119,23 @@ def patch(checkouts):
     /// Creates a TTY session""")
 
     session = checkouts / "Citadel/Sources/Citadel/ClientSession.swift"
+    # Keep the handshake deadline separate from interactive host-key approval.
+    text = session.read_text()
+    start = text.index("final class ClientHandshakeHandler:")
+    end = text.index("\npublic struct SSHClientSettings:", start)
+    handler = Path(__file__).with_name("citadel_handshake.swift").read_text().rstrip()
+    write_source(session, text[:start] + handler + "\n" + text[end:])
+    replace_once(session,
+        """            loginTimeout: .seconds(10)
+        )
+        var clientConfiguration = SSHClientConfiguration(
+            userAuthDelegate: settings.authenticationMethod(),
+            serverAuthDelegate: settings.hostKeyValidator""",
+        """            loginTimeout: .seconds(30)
+        )
+        var clientConfiguration = SSHClientConfiguration(
+            userAuthDelegate: settings.authenticationMethod(),
+            serverAuthDelegate: HandshakeHostKeyValidator(base: settings.hostKeyValidator, handshake: handshakeHandler)""")
     serializer = checkouts / "Citadel/Sources/Citadel/SFTP/SFTPSerializer.swift"
     replace_once(serializer,
         "            out.writeSSHString(rename.newPath)\n            out.writeInteger(rename.flags)",
@@ -133,6 +150,17 @@ def patch(checkouts):
         _ = bootstrap.channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_KEEPCNT), value: 3)
         #endif
         return try await bootstrap.connect(host: settings.host, port: settings.port).flatMap { channel in""")
+    replace_once(session,
+        """                handshakeHandler.authenticated
+            }.flatMap {""",
+        """                handshakeHandler.authenticated.flatMapError { error in
+                    // A refused key or failed login must not leave an
+                    // unowned authenticated TCP socket alive.
+                    channel.close().flatMapError { _ in
+                        channel.eventLoop.makeSucceededVoidFuture()
+                    }.flatMapThrowing { throw error }
+                }
+            }.flatMap {""")
 
     nio = checkouts / "swift-nio-ssh/Sources/NIOSSH/NIOSSHHandler.swift"
     replace_once(nio,

@@ -132,7 +132,7 @@ jobs:
           UsePAM yes
           PermitRootLogin no
           AllowUsers shotbot
-          LoginGraceTime 15
+          LoginGraceTime 60
           LogLevel VERBOSE
           EOF
           sudo /usr/sbin/sshd -t -f "$PWD/build/sshd_config"

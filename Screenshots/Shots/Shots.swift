@@ -24,6 +24,9 @@ final class Shots: XCTestCase {
         tap("connectButton")
         let trust = app.buttons["Trust"].firstMatch
         XCTAssertTrue(trust.waitForExistence(timeout: 60), app.debugDescription)
+        // A person can read the fingerprint for longer than Citadel's
+        // former ten-second login timeout before making a decision.
+        sleep(12)
         trust.tap()
         waitForText("SHOT_READY")
         shot("01-connected-dark")
