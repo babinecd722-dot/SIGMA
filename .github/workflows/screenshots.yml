@@ -84,9 +84,6 @@ jobs:
 
       - name: Enable local SSH server
         run: |
-          sudo systemsetup -setremotelogin on 2>/dev/null \
-            || sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist 2>/dev/null \
-            || sudo launchctl bootstrap system/ /System/Library/LaunchDaemons/ssh.plist
           # Dedicated account: setting a password on a fresh user needs
           # no old-password credentials (unlike changing `runner`'s).
           if ! sudo dscl . -read /Users/shotbot >/dev/null 2>&1; then
@@ -102,20 +99,36 @@ jobs:
             sudo cp /tmp/shotbot-marker /Users/shotbot/welcome.txt
             sudo chown shotbot:staff /Users/shotbot/welcome.txt
           fi
+          if sudo dscl . -read /Groups/com.apple.access_ssh >/dev/null 2>&1; then
+            sudo dseditgroup -o edit -a shotbot -t user com.apple.access_ssh
+          fi
           # Give the real interactive shell a predictable prompt and history.
           printf 'export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"\n' | sudo tee /Users/shotbot/.zshenv >/dev/null
           printf 'HISTFILE=~/.zsh_history\nHISTSIZE=1000\nSAVEHIST=1000\nPROMPT="shotbot %% "\nprintf "SHOT_READY\\n"\n' | sudo tee /Users/shotbot/.zshrc >/dev/null
           sudo chown shotbot:staff /Users/shotbot/.zshenv /Users/shotbot/.zshrc
           sudo dscl . -passwd /Users/shotbot 'Term1n4lSh0ts' \
             || printf 'Term1n4lSh0ts\n' | sudo dscl . -passwd /Users/shotbot
+          ssh-keygen -q -t ed25519 -N '' -f build/ssh_host_ed25519_key
+          cat > build/sshd_config <<EOF
+          Port 22222
+          ListenAddress 127.0.0.1
+          HostKey $PWD/build/ssh_host_ed25519_key
+          PidFile $PWD/build/sshd.pid
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication no
+          AuthenticationMethods password
+          UsePAM yes
+          PermitRootLogin no
+          AllowUsers shotbot
+          LoginGraceTime 15
+          LogLevel VERBOSE
+          EOF
+          sudo /usr/sbin/sshd -t -f "$PWD/build/sshd_config"
+          sudo /usr/sbin/sshd -f "$PWD/build/sshd_config" -E "$PWD/build/sshd.log"
           for i in 1 2 3 4 5 6 7 8 9 10; do
-            nc -z 127.0.0.1 22 && break || sleep 2
+            nc -z 127.0.0.1 22222 && break || sleep 1
           done
-          nc -z 127.0.0.1 22 && echo "sshd up"
-          # Which families is sshd actually on? The app must reach a
-          # listener on whichever address its resolver picks first.
-          nc -z ::1 22 && echo "sshd: ipv6 ok" || echo "sshd: ipv4 only"
-          exec 3<>/dev/tcp/127.0.0.1/22 && head -c 40 <&3 && exec 3<&- && echo
+          nc -z 127.0.0.1 22222
 
       - name: Verify foreground appearance, scrollback, history and reconnect
         run: |
@@ -127,6 +140,11 @@ jobs:
             -parallel-testing-enabled NO \
             -resultBundlePath build/ui-tests.xcresult \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee test.log
+
+      - name: Stop local SSH fixture
+        if: always()
+        run: |
+          if [ -f build/sshd.pid ]; then sudo kill "$(cat build/sshd.pid)" || true; fi
 
       - name: Export screenshots
         if: always()
@@ -143,4 +161,5 @@ jobs:
             shots/
             build/ui-tests.xcresult
             test.log
+            build/sshd.log
           retention-days: 30

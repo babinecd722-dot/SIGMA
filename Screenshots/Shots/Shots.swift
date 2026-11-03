@@ -14,7 +14,7 @@ final class Shots: XCTestCase {
 
     func testAppearanceAndCleanStartup() throws {
         app.launch()
-        field("server.example.com").typeText("127.0.0.1")
+        field("server.example.com").typeText("127.0.0.1:22222")
         field("root").typeText("shotbot")
         let password = app.secureTextFields["Optional"].firstMatch
         XCTAssertTrue(password.waitForExistence(timeout: 10))
@@ -95,7 +95,12 @@ final class Shots: XCTestCase {
     }
 
     private func tap(_ id: String) {
-        let element = app.buttons[id].firstMatch
+        let button = app.buttons[id].firstMatch
+        if button.waitForExistence(timeout: 3), button.isHittable {
+            button.tap()
+            return
+        }
+        let element = app.descendants(matching: .any)[id].firstMatch
         XCTAssertTrue(element.waitForExistence(timeout: 15), "Missing \(id): \(app.debugDescription)")
         element.tap()
     }
@@ -135,9 +140,11 @@ final class Shots: XCTestCase {
         let cg = try XCTUnwrap(image.cgImage)
         let crop = try XCTUnwrap(cg.cropping(to: CGRect(x: cg.width / 2, y: cg.height * 3 / 4, width: 8, height: 8)))
         var rgba = [UInt8](repeating: 0, count: 8 * 8 * 4)
-        let context = try XCTUnwrap(CGContext(data: &rgba, width: 8, height: 8, bitsPerComponent: 8,
-            bytesPerRow: 32, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        context.draw(crop, in: CGRect(x: 0, y: 0, width: 8, height: 8))
+        try rgba.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 8, height: 8, bitsPerComponent: 8,
+                bytesPerRow: 32, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
         return (0..<64).reduce(0.0) { $0 + Double(rgba[$1 * 4]) + Double(rgba[$1 * 4 + 1]) + Double(rgba[$1 * 4 + 2]) } / (64 * 3 * 255)
     }
 

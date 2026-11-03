@@ -289,20 +289,16 @@ struct OnboardingView: View {
 
 /// A block cursor that blinks, like the real thing.
 private struct BlinkingCursor: View {
-    @State private var visible = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(Color.white)
-            .frame(width: 17, height: 30)
-            .opacity(visible ? 1 : 0)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.53).repeatForever(autoreverses: true)) {
-                    visible = false
-                }
-            }
+        TimelineView(.animation(minimumInterval: 0.1, paused: reduceMotion)) { context in
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(Color.white)
+                .frame(width: 17, height: 30)
+                .opacity(reduceMotion ? 1 : 0.5 + 0.5 * cos(context.date.timeIntervalSinceReferenceDate * .pi / 0.53))
+        }
+        .accessibilityHidden(true)
     }
 }
 

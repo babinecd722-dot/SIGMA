@@ -76,6 +76,8 @@ private struct SessionPillView: View {
                 Text(session.title)
                     .font(.system(.subheadline, weight: isActive ? .semibold : .regular))
                     .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 240)
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 44)

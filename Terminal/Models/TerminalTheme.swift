@@ -33,9 +33,9 @@ struct TerminalTheme: Identifiable, Hashable {
             // Light themes need darkened ANSI values — the stock
             // palette is tuned for dark backgrounds and washes out.
             return Self.palette([
-                0x2a2c30, 0xc42b2b, 0x2e8b17, 0xb05c00, 0x1a5fd7, 0xa022a0,
-                0x0e7c86, 0x6a6f78, 0x9aa0aa, 0xe05555, 0x3fa322, 0xd07a1e,
-                0x3a7ff0, 0xbd3dc0, 0x17a0ab, 0x3a3d42
+                0x2a2c30, 0xc42b2b, 0x257c16, 0xb05c00, 0x1a5fd7, 0xa022a0,
+                0x0e7c86, 0x6a6f78, 0x646974, 0xcb3636, 0x368319, 0xa36310,
+                0x2169d8, 0xae32b1, 0x087d88, 0x3a3d42
             ])
         default: // pro — dark
             return Self.palette([

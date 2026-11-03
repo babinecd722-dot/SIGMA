@@ -5,6 +5,21 @@ import SwiftTerm
 
 final class TerminalAppearanceTests: XCTestCase {
     @MainActor
+    func testPaperANSITextHasReadableContrast() {
+        func luminance(_ red: Double, _ green: Double, _ blue: Double) -> Double {
+            func linear(_ value: Double) -> Double {
+                value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        }
+        let background = luminance(0.98, 0.98, 0.97)
+        for (index, color) in TerminalTheme.paper.ansiColors.enumerated() {
+            let foreground = luminance(Double(color.red) / 65535, Double(color.green) / 65535, Double(color.blue) / 65535)
+            XCTAssertGreaterThanOrEqual((background + 0.05) / (foreground + 0.05), 4.5, "ANSI color \(index)")
+        }
+    }
+
+    @MainActor
     func testLightDarkSwitchRepaintsExistingTerminalAndSurvivesResize() async throws {
         let view = AccessibleTerminalView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         let host = UIViewController()

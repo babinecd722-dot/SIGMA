@@ -71,12 +71,21 @@ jobs:
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGN_IDENTITY=-
 
+      - name: Summarize Simulator tests
+        if: always()
+        run: |
+          if [ -d build/tests.xcresult ]; then
+            xcrun xcresulttool get test-results summary --path build/tests.xcresult | tee build/test-summary.json
+          fi
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: build/tests.xcresult
+          path: |
+            build/tests.xcresult
+            build/test-summary.json
           if-no-files-found: ignore
 
       - name: Archive (unsigned)

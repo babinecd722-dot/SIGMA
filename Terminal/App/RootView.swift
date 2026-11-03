@@ -254,8 +254,9 @@ struct RootView: View {
                     }
                 }
             } label: {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "ellipsis")
             }
+            .accessibilityLabel("More")
             .accessibilityIdentifier("workspaceMenu")
         }
     }

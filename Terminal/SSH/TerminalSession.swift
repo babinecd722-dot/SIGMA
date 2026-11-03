@@ -314,7 +314,7 @@ final class TerminalSession: ObservableObject, Identifiable {
         do {
             // Authentication errors must reach the caller once; the
             // optional metadata probe intentionally tolerates exec failures.
-            _ = try await connection.ensureConnected()
+            try await connection.prepareTransport()
             let probe = await engine?.probeHost(self)
             try Task.checkCancellation()
             guard !isTerminated, gen == connectGeneration else { return }
@@ -347,7 +347,9 @@ final class TerminalSession: ObservableObject, Identifiable {
             // request already carried it — resizes that failed on the
             // dead channel are replayed here.
             enqueueResize()
-            tmuxAttached = launch.usesTmux
+            // Keep ownership for cleanup even if resume is disabled
+            // before a later reconnect opens a plain login shell.
+            tmuxAttached = tmuxAttached || launch.usesTmux
             reachedOnline = true
             state = .online
         } catch {

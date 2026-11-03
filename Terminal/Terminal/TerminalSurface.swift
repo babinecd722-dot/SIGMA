@@ -68,8 +68,9 @@ struct TerminalSurface: UIViewRepresentable {
 
     static func applyStyle(_ view: TerminalView, fontSize: Double, theme: TerminalTheme) {
         // A color change must not reset font metrics, selection or PTY size.
-        if view.font.pointSize != fontSize {
-            view.font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        if view.font != font {
+            view.font = font
         }
         let style: UIUserInterfaceStyle = theme.id == "paper" ? .light : .dark
         view.overrideUserInterfaceStyle = style

@@ -280,6 +280,7 @@ struct HostsListView: View {
                 ConnectRing()
             }
         }
+        .frame(width: 46, height: 46)
     }
 
     // MARK: - Actions
@@ -396,17 +397,18 @@ private struct PendingWatcher: View {
     }
 }
 
-/// Watches a pending session and reports state transitions plus the
+/// Rotation is driven by the display timeline, so disappearing rows
+/// and changes to Reduce Motion cannot leave a queued animation behind.
 private struct ConnectRing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
-        Circle()
-            .trim(from: 0, to: 0.72)
-            .stroke(Color.terminalAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            .frame(width: 46, height: 46)
-            .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360))
+            Circle()
+                .trim(from: 0, to: 0.72)
+                .stroke(Color.terminalAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .frame(width: 46, height: 46)
+                .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360))
         }
         .accessibilityHidden(true)
     }

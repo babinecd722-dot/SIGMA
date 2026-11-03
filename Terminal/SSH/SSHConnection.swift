@@ -275,6 +275,12 @@ actor SSHConnection {
 
     // MARK: - Channels
 
+    /// Authenticate without handing the mutable library client across
+    /// the actor boundary to the UI.
+    func prepareTransport() async throws {
+        _ = try await ensureConnected()
+    }
+
     func openShell(cols: Int, rows: Int, command: String? = nil) async throws -> ShellChannel {
         try await withTransport { client in
             let shell = ShellChannel()

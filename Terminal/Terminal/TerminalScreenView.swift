@@ -63,6 +63,7 @@ struct TerminalScreenView: View {
                         Text(session.title)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
+                            .truncationMode(.middle)
                     }
                 }
             }

@@ -46,6 +46,7 @@ struct SettingsView: View {
                         rowLabel("Appearance", icon: "circle.lefthalf.filled")
                     }
 
+                    .pickerStyle(.menu)
                     .accessibilityIdentifier("appearancePicker")
 
                     NavigationLink {
