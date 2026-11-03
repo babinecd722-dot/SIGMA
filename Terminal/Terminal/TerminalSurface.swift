@@ -89,6 +89,9 @@ struct TerminalSurface: UIViewRepresentable {
         view.selectedTextBackgroundColor = UIColor(theme.selection)
         view.selectedTextForegroundColor = theme.uiForeground
         view.installColors(theme.ansiColors)
+        // tmux and adaptive TUIs query/subscribe to the terminal's
+        // light/dark preference independently of UIKit appearance.
+        view.updateColorScheme(style == .light ? .light : .dark)
         view.setNeedsDisplay()
         if keyboardChanged, view.isFirstResponder { view.reloadInputViews() }
     }

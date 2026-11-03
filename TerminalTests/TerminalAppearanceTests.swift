@@ -74,6 +74,25 @@ final class TerminalAppearanceTests: XCTestCase {
     }
 
     @MainActor
+    func testRemoteApplicationsReceiveCurrentColorScheme() async throws {
+        let view = TerminalView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        let replies = TerminalReplyRecorder()
+        view.terminalDelegate = replies
+        view.feed(text: "\u{1b}[?2031h") // subscribe to appearance changes
+        try await Task.sleep(for: .milliseconds(100))
+        for theme in [TerminalTheme.paper, .pro, .paper] {
+            replies.bytes.removeAll()
+            TerminalSurface.applyStyle(view, fontSize: 14, theme: theme)
+            view.feed(text: "\u{1b}[?996n") // query the active preference
+            try await Task.sleep(for: .milliseconds(100))
+            let reply = "\u{1b}[?997;\(theme.id == "paper" ? 2 : 1)n"
+            let output = String(decoding: replies.bytes, as: UTF8.self)
+            XCTAssertEqual(output.components(separatedBy: reply).count - 1, 2,
+                "Both the subscribed notification and query must report the palette: \(output.debugDescription)")
+        }
+    }
+
+    @MainActor
     private func assertColor(_ actual: UIColor, equals expected: UIColor, file: StaticString = #filePath, line: UInt = #line) {
         var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
         var er: CGFloat = 0, eg: CGFloat = 0, eb: CGFloat = 0, ea: CGFloat = 0
@@ -84,4 +103,16 @@ final class TerminalAppearanceTests: XCTestCase {
         XCTAssertEqual(ab, eb, accuracy: 0.01, file: file, line: line)
         XCTAssertEqual(aa, ea, accuracy: 0.01, file: file, line: line)
     }
+}
+
+@MainActor
+private final class TerminalReplyRecorder: TerminalViewDelegate {
+    var bytes: [UInt8] = []
+    func send(source: TerminalView, data: ArraySlice<UInt8>) { bytes.append(contentsOf: data) }
+    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
+    func setTerminalTitle(source: TerminalView, title: String) {}
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+    func scrolled(source: TerminalView, position: Double) {}
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {}
+    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }
