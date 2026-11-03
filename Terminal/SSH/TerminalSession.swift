@@ -312,6 +312,9 @@ final class TerminalSession: ObservableObject, Identifiable {
         // watchers see a live reconnect instead of an abandoned one.
         engine?.clearPasswordPrompt(for: self)
         do {
+            // Authentication errors must reach the caller once; the
+            // optional metadata probe intentionally tolerates exec failures.
+            _ = try await connection.ensureConnected()
             let probe = await engine?.probeHost(self)
             try Task.checkCancellation()
             guard !isTerminated, gen == connectGeneration else { return }
