@@ -3,6 +3,7 @@ name: Screenshots
 on:
   push:
     branches: ['fix/**']
+    paths-ignore: ['TerminalTests/**', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:
