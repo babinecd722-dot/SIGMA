@@ -82,14 +82,14 @@ final class Shots: XCTestCase {
         openSettings()
         tap("Theme")
         tap("theme-graphite")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars["Theme"].buttons.firstMatch.tap()
         dismissSettings()
         XCTAssertLessThan(try terminalBackgroundBrightness(), 0.25)
         shot("05-graphite-light-chrome")
         openSettings()
         tap("Theme")
         tap("theme-paper")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars["Theme"].buttons.firstMatch.tap()
         dismissSettings()
         XCTAssertGreaterThan(try terminalBackgroundBrightness(), 0.85)
         shot("05-paper")
@@ -164,8 +164,14 @@ final class Shots: XCTestCase {
     private func openSettings() { tap("workspaceMenu"); tap("Settings") }
 
     private func dismissSettings() {
-        app.navigationBars["Settings"].swipeDown()
-        XCTAssertTrue(app.buttons["workspaceMenu"].waitForExistence(timeout: 10), app.debugDescription)
+        let done = app.buttons["settingsDone"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 10), app.debugDescription)
+        done.tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == NO"), object: done)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 10), .completed, app.debugDescription)
+        let menu = app.buttons["workspaceMenu"].firstMatch
+        let usable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == YES"), object: menu)
+        XCTAssertEqual(XCTWaiter.wait(for: [usable], timeout: 10), .completed, app.debugDescription)
     }
 
     private func hideKeyboard() {

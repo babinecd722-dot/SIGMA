@@ -3,6 +3,7 @@ import SwiftUI
 /// Settings sheet. Grouped form on a dark surface, accent chips
 /// for glyphs — no explanatory copy anywhere.
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var keepAlive: KeepAliveEngine
     /// A refused write reverts the control silently — the alert is how
@@ -155,6 +156,15 @@ struct SettingsView: View {
             .background(Color.terminalSurface.ignoresSafeArea())
             .tint(.terminalAccent)
             .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        saveShell()
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("settingsDone")
+                }
+            }
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             fontSizeDraft = settings.settings.fontSize
