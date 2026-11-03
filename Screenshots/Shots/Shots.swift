@@ -75,6 +75,7 @@ final class Shots: XCTestCase {
             let light = try terminalBackgroundBrightness()
             if appearance == "Light" { XCTAssertGreaterThan(light, 0.85) }
             else { XCTAssertLessThan(light, 0.2) }
+            try assertChrome(light: appearance == "Light")
             assertCleanTerminal()
         }
 
@@ -86,6 +87,7 @@ final class Shots: XCTestCase {
         dismissSettings()
         XCTAssertLessThan(try terminalBackgroundBrightness(), 0.25)
         shot("05-graphite-light-chrome")
+        try assertChrome(light: true)
         openSettings()
         tap("Theme")
         tap("theme-paper")
@@ -93,6 +95,7 @@ final class Shots: XCTestCase {
         dismissSettings()
         XCTAssertGreaterThan(try terminalBackgroundBrightness(), 0.85)
         shot("05-paper")
+        try assertChrome(light: true)
 
         openSettings()
         tap("appearancePicker")
@@ -100,6 +103,7 @@ final class Shots: XCTestCase {
         dismissSettings()
         XCTAssertGreaterThan(try terminalBackgroundBrightness(), 0.85)
         shot("05-paper-dark-chrome")
+        try assertChrome(light: false)
         openSettings()
         tap("appearancePicker")
         tap("Light")
@@ -115,14 +119,16 @@ final class Shots: XCTestCase {
         waitForText("row-50") // tmux retained the existing shell
         assertCleanTerminal()
         terminal.tap()
-        // Leaving tmux copy mode restores command entry after scrolling.
-        let escape = app.buttons["Escape"].firstMatch
-        if escape.waitForExistence(timeout: 3), escape.isHittable { escape.tap() }
+        // Ctrl-C cancels copy mode or clears the prompt. A standalone
+        // Escape can instead turn the next 'h' into a shell Meta chord.
+        tap("Control")
+        app.typeText("c")
         app.typeText("history\n")
-        sleep(1)
+        waitForText("printf 'USER_COMMAND_OK") // actual server history, not just command echo
         assertCleanTerminal() // setup must not enter server-side history
         hideKeyboard()
         shot("06-reconnected-light")
+        try assertChrome(light: true)
     }
 
     private var terminal: XCUIElement { app.descendants(matching: .any)["terminalSurface"].firstMatch }
@@ -176,7 +182,11 @@ final class Shots: XCTestCase {
 
     private func hideKeyboard() {
         let button = app.buttons["Hide keyboard"].firstMatch
-        if button.exists { button.tap() }
+        if button.exists {
+            button.tap()
+            let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == NO"), object: button)
+            XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 10), .completed)
+        }
     }
 
     private func dismissPasswordSaveOffer() {
@@ -191,9 +201,23 @@ final class Shots: XCTestCase {
     private func terminalBackgroundBrightness() throws -> Double {
         // Sample blank cells below the prompt, away from bars and text.
         sleep(1)
-        let image = terminal.screenshot().image
+        return try brightness(terminal.screenshot().image, x: 0.5, y: 0.75)
+    }
+
+    private func assertChrome(light: Bool) throws {
+        let image = app.screenshot().image
+        // Blank parts of the navigation bar and bottom safe area must
+        // follow app appearance, independently of the terminal palette.
+        for y in [0.08, 0.97] {
+            let value = try brightness(image, x: 0.04, y: y)
+            if light { XCTAssertGreaterThan(value, 0.85, "Light chrome at y=\(y)") }
+            else { XCTAssertLessThan(value, 0.2, "Dark chrome at y=\(y)") }
+        }
+    }
+
+    private func brightness(_ image: UIImage, x: Double, y: Double) throws -> Double {
         let cg = try XCTUnwrap(image.cgImage)
-        let crop = try XCTUnwrap(cg.cropping(to: CGRect(x: cg.width / 2, y: cg.height * 3 / 4, width: 8, height: 8)))
+        let crop = try XCTUnwrap(cg.cropping(to: CGRect(x: Int(Double(cg.width) * x), y: Int(Double(cg.height) * y), width: 8, height: 8)))
         var rgba = [UInt8](repeating: 0, count: 8 * 8 * 4)
         try rgba.withUnsafeMutableBytes { bytes in
             let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 8, height: 8, bitsPerComponent: 8,

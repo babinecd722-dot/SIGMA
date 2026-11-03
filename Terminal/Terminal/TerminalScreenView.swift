@@ -45,7 +45,7 @@ struct TerminalScreenView: View {
         // follow app appearance. A pinned light palette in a dark app
         // must not put white toolbar labels on a white background.
         .background(activeTheme.background)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .clipped()
         .overlay(alignment: .top) {
             if showsStatus {
                 statusBadge

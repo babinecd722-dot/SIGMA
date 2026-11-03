@@ -31,6 +31,7 @@ struct RootView: View {
     @State private var hostKeyAnsweredByButton = false
     @ObservedObject private var transferManager = TransferManager.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
@@ -201,8 +202,14 @@ struct RootView: View {
                     onNewSession: { showSessionPicker = true }
                 )
                 .padding(.bottom, 4)
+                .background(Color.terminalSurface.ignoresSafeArea(.container, edges: .bottom))
             }
             .navigationBarTitleDisplayMode(.inline)
+            // The scroll view's palette may differ from app appearance.
+            // Opaque chrome keeps titles, status icons and tabs readable.
+            .toolbarBackground(Color.terminalSurface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(colorScheme, for: .navigationBar)
             .toolbar { workspaceToolbar }
         }
     }
