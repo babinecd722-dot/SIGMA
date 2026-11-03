@@ -44,12 +44,10 @@ final class Socks5ParserTests: XCTestCase {
 
     func testIPv6FullAddress() {
         // 2001:db8::ff00:42 : 22
-        var payload = Data([0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0x00, 0, 0x42])
+        var payload = Data([0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0x00, 0, 0x42])
         payload.append(contentsOf: [0x00, 0x16])
         let r = Socks5.parseRequest(atyp: 0x04, payload: payload)
-        XCTAssertNotNil(r)
-        XCTAssertEqual(r?.port, 22)
-        XCTAssertTrue(r?.host.contains("2001") == true)
+        XCTAssertEqual(r, .init(host: "2001:db8::ff00:42", port: 22))
     }
 
     func testPortParsingIsSliceSafe() {

@@ -94,6 +94,10 @@ def patch(checkouts):
     /// Creates a TTY session""")
 
     session = checkouts / "Citadel/Sources/Citadel/ClientSession.swift"
+    serializer = checkouts / "Citadel/Sources/Citadel/SFTP/SFTPSerializer.swift"
+    replace_once(serializer,
+        "            out.writeSSHString(rename.newPath)\n            out.writeInteger(rename.flags)",
+        "            out.writeSSHString(rename.newPath)\n            // SFTP v3 RENAME has no flags field.")
     replace_once(session, "import NIO\n", "import NIO\n#if canImport(Darwin)\nimport Darwin\n#endif\n")
     replace_once(session,
         "        return try await bootstrap.connect(host: settings.host, port: settings.port).flatMap { channel in",

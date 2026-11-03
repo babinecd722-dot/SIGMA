@@ -55,7 +55,7 @@ final class SessionEngine: ObservableObject {
 
     /// Set by UI layer: the pending password prompt must come down
     /// (its session terminated or authenticated through another path).
-    var onPasswordPromptDismissed: (@Sendable () -> Void)?
+    var onPasswordPromptDismissed: (@Sendable (UUID) -> Void)?
 
     /// Set by UI layer: surface an error as a gentle alert.
     var onError: (@MainActor (String) -> Void)?
@@ -303,6 +303,13 @@ final class SessionEngine: ObservableObject {
         onAuthNeeded?(session)
     }
 
+    func nextPasswordSession(excluding excluded: UUID? = nil) -> TerminalSession? {
+        for id in passwordQueue where id != excluded {
+            if let session = sessions.first(where: { $0.id == id }) { return session }
+        }
+        return nil
+    }
+
     /// True while this session's password prompt is outstanding — the
     /// host row keeps its "connecting" affordance instead of snapping
     /// to a red error the prompt may yet resolve.
@@ -316,7 +323,7 @@ final class SessionEngine: ObservableObject {
         guard passwordQueue.contains(session.id) else { return }
         passwordQueue.removeAll { $0 == session.id }
         awaitingPasswordIDs.remove(session.id)
-        onPasswordPromptDismissed?()
+        onPasswordPromptDismissed?(session.id)
     }
 
     /// A session is going away: its pending prompts die with it.

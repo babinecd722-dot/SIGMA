@@ -13,6 +13,7 @@ struct RootView: View {
     @State private var errorMessage: String?
     @State private var passwordSession: TerminalSession?
     @State private var passwordText = ""
+    @State private var submittingPasswordID: UUID?
 
     // Host key prompt plumbing — a queue: parallel connects (e.g.
     // bastion + target) must not clobber a pending prompt's continuation.
@@ -124,18 +125,20 @@ struct RootView: View {
             engine.onHostKeyPromptDismissed = { event in
                 Task { @MainActor in dismissHostKeyPrompt(for: event) }
             }
-            engine.onPasswordPromptDismissed = {
+            engine.onPasswordPromptDismissed = { id in
                 Task { @MainActor in
-                    passwordSession = nil
-                    passwordText = ""
+                    if passwordSession?.id == id {
+                        passwordSession = nil
+                        passwordText = ""
+                    }
+                    if submittingPasswordID == id { submittingPasswordID = nil }
+                    presentNextPasswordPrompt()
                 }
             }
             engine.onError = { message in
                 errorMessage = message
             }
-            engine.onAuthNeeded = { session in
-                passwordSession = session
-            }
+            engine.onAuthNeeded = { _ in presentNextPasswordPrompt() }
             engine.onClipboardRequest = { session, data in
                 clipboardQueue.append(ClipboardRequest(session: session, data: data))
                 presentNextClipboard()
@@ -286,10 +289,21 @@ struct RootView: View {
         )
     }
 
+    private func presentNextPasswordPrompt() {
+        guard passwordSession == nil else { return }
+        passwordSession = engine.nextPasswordSession(excluding: submittingPasswordID)
+    }
+
     private var passwordPromptPresented: Binding<Bool> {
-        Binding(
-            get: { passwordSession != nil },
-            set: { if !$0 { passwordSession = nil; passwordText = "" } }
+        let presented = passwordSession
+        return Binding(
+            get: { presented != nil && passwordSession?.id == presented?.id },
+            set: { visible in
+                guard !visible, let presented, passwordSession?.id == presented.id else { return }
+                passwordSession = nil
+                passwordText = ""
+                engine.clearPasswordPrompt(for: presented)
+            }
         )
     }
 
@@ -298,13 +312,18 @@ struct RootView: View {
     private func submitPassword() {
         guard let session = passwordSession else { return }
         let text = passwordText
+        submittingPasswordID = session.id
         passwordSession = nil
         passwordText = ""
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else {
+            engine.clearPasswordPrompt(for: session)
+            return
+        }
         // If the store fails, reconnecting would re-prompt forever —
         // say so instead. The raw OSStatus stays out of the UI.
         let status = Keychain.save(text, tag: "password.\(session.profile.id.uuidString)")
         guard status == errSecSuccess else {
+            engine.clearPasswordPrompt(for: session)
             errorMessage = String(localized: "Couldn't reach the keychain")
             return
         }

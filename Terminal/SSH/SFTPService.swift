@@ -45,7 +45,6 @@ struct RemoteFile: Identifiable, Hashable, Sendable {
 /// `commitTemp(to:overwrite:)`.
 final class SFTPService: Sendable {
     private let sftp: Citadel.SFTPClient
-    private static let chunk = 256 * 1024
 
     /// Live-user bookkeeping: the warm cache may invalidate a service
     /// while a transfer still streams through it. Leases delay the
@@ -198,32 +197,25 @@ final class SFTPService: Sendable {
     /// short reads mid-file, so "< chunk" is never treated as EOF.
     /// `isComplete` is only true when EOF was actually observed.
     func readFile(path: String, maxBytes: Int = 4_000_000) async throws -> (data: Data, isComplete: Bool) {
-        try await sftp.withFile(filePath: path, flags: .read) { file in
+        let cap = max(0, maxBytes)
+        return try await sftp.withFile(filePath: path, flags: .read) { file in
             var out = Data()
-            out.reserveCapacity(min(maxBytes, 1_000_000))
-            var offset: UInt64 = 0
-            var sawEOF = false
-            while out.count < maxBytes {
-                let want = UInt32(min(Self.chunk, maxBytes - out.count))
-                let buffer = try await file.read(from: offset, length: want)
-                let bytes = buffer.readableBytes
-                if bytes == 0 { sawEOF = true; break }
-                out.append(contentsOf: buffer.readableBytesView)
-                offset += UInt64(bytes)
+            out.reserveCapacity(min(cap, 1_000_000))
+            try await TransferPipeline.read(receive: { offset, length in
+                guard offset < UInt64(cap) else { return Data() }
+                let wanted = min(length, cap - Int(offset))
+                let buffer = try await file.read(from: offset, length: UInt32(wanted))
+                return Data(buffer.readableBytesView)
+            }, consume: { out.append($0) })
+            if out.count < cap { return (out, true) }
+            // The cap is not EOF. Only an empty remote read proves that
+            // an exactly-cap-sized preview contains the complete file.
+            do {
+                let probe = try await file.read(from: UInt64(out.count), length: 1)
+                return (out, probe.readableBytes == 0)
+            } catch {
+                return (out, false)
             }
-            if !sawEOF {
-                // Hit the cap exactly: the file may be precisely
-                // `maxBytes` long. Probe one byte past the end — a real
-                // EOF reads empty. A probe failure means "unknown", so
-                // report incomplete rather than lie about completeness.
-                do {
-                    let probe = try await file.read(from: offset, length: 1)
-                    sawEOF = probe.readableBytes == 0
-                } catch {
-                    sawEOF = false
-                }
-            }
-            return (out, sawEOF)
         }
     }
 
