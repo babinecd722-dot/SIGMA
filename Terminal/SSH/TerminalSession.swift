@@ -377,6 +377,18 @@ final class TerminalSession: ObservableObject, Identifiable {
         consumeTask = nil
         modifiers.reset()
         shellEnding = false
+        // A new PTY owns fresh modes/cursor/scrollback. Replaying the old
+        // local buffer through a tmux redraw duplicates output and carries
+        // stale mouse/alternate-screen state across a server restart.
+        feedBuffer.removeAll(keepingCapacity: true)
+        pendingOutput.removeAll(keepingCapacity: true)
+        let reset = Data([0x1B, 0x63]) // local RIS; never sent to the server
+        if onOutput != nil {
+            feedBuffer.append(reset)
+            scheduleFlush()
+        } else {
+            pendingOutput.append(reset)
+        }
     }
 
     /// A failed attempt only publishes when it is still the current
@@ -442,8 +454,8 @@ final class TerminalSession: ObservableObject, Identifiable {
                 switch event {
                 case .output(let data):
                     await self?.deliverOutput(data, gen: gen)
-                case .closed(let error):
-                    await self?.shellClosed(shell, error: error, gen: gen)
+                case .closed(let error, let processExited):
+                    await self?.shellClosed(shell, error: error, gen: gen, processExited: processExited)
                     return
                 }
             }
@@ -456,15 +468,14 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// loss — only the latter may auto-reconnect. Events from a shell
     /// that is no longer current are dropped, so a stale close can't
     /// write offline over a fresh online.
-    private func shellClosed(_ shell: ShellChannel, error: Error?, gen: Int) async {
+    private func shellClosed(_ shell: ShellChannel, error: Error?, gen: Int, processExited: Bool = false) async {
         guard !isTerminated, gen == connectGeneration, shell === self.shell else { return }
         self.shell = nil
         // Before the await: a non-zero `exit` arrives as CommandFailed,
         // and a zero `exit` often arrives as "channel already closed"
         // because the remote hung up first. Neither is a dropped link.
         shellEnding = true
-        let transportUp = await connection.isConnected
-        if Self.endedByRemoteShell(error, transportUp: transportUp) {
+        if Self.endedByRemoteShell(error, processExited: processExited) {
             lastCloseReason = .remoteExit
         } else {
             lastCloseReason = .transportLost
@@ -806,19 +817,10 @@ final class TerminalSession: ObservableObject, Identifiable {
         reconnect()
     }
 
-    /// The PTY ended because the remote process exited, not because the
-    /// socket died. Citadel reports a non-zero status (`exit` after a
-    /// failed command, tmux leaving) as `CommandFailed`, and a clean
-    /// exit often surfaces as "channel already closed" once sshd hangs
-    /// up the session channel. The transport is still up in both cases.
-    private static func endedByRemoteShell(_ error: Error?, transportUp: Bool) -> Bool {
-        if error == nil { return transportUp }
-        if error is SSHClient.CommandFailed { return true }
-        // Any other channel teardown while the SSH connection is still
-        // up is the remote process leaving. A reset socket (IOError)
-        // is the drop that may reconnect.
-        if !transportUp || error is IOError { return false }
-        return true
+    /// Only an explicit process status is a remote exit. Parent connection
+    /// flags can lag a channel close during reboot or a network failure.
+    static func endedByRemoteShell(_ error: Error?, processExited: Bool = false) -> Bool {
+        processExited || error is SSHClient.CommandFailed
     }
 
     /// One short human phrase per failure class — never raw error text.

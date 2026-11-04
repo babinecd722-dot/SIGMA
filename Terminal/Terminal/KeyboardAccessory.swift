@@ -65,6 +65,7 @@ final class KeyboardAccessoryView: UIInputView {
 
     static func forSession(_ session: TerminalSession) -> KeyboardAccessoryView {
         if let cached = bars[session.id]?.bar { return cached }
+        bars = bars.filter { $0.value.bar != nil }
         let bar = KeyboardAccessoryView()
         bar.bind(modifiers: session.modifiers)
         bar.onSend = { [weak session] bytes in
@@ -77,7 +78,7 @@ final class KeyboardAccessoryView: UIInputView {
     }
 
     init() {
-        super.init(frame: CGRect(x: 0, y: 0, width: 0, height: 56), inputViewStyle: .keyboard)
+        super.init(frame: CGRect(x: 0, y: 0, width: 0, height: 44), inputViewStyle: .keyboard)
         accessibilityIdentifier = "keyboardAccessory"
         bind(modifiers: modifiers)
         build()
@@ -93,42 +94,44 @@ final class KeyboardAccessoryView: UIInputView {
         syncModifiers()
     }
 
+    /// Match the opaque system keyboard backing, including its rounded
+    /// corners. The bar has no horizontally scrolling content.
+    static func backdrop(light: Bool) -> UIColor {
+        light ? UIColor(white: 0.94, alpha: 1) : UIColor(white: 0.12, alpha: 1)
+    }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: 44)
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        backgroundColor = Self.backdrop(light: traitCollection.userInterfaceStyle == .light)
+    }
+
     private func build() {
-        backgroundColor = .clear
-        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
-        blur.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(blur)
-        NSLayoutConstraint.activate([
-            blur.leadingAnchor.constraint(equalTo: leadingAnchor),
-            blur.trailingAnchor.constraint(equalTo: trailingAnchor),
-            blur.topAnchor.constraint(equalTo: topAnchor),
-            blur.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-
-        let scroll = UIScrollView()
-        scroll.showsHorizontalScrollIndicator = false
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        blur.contentView.addSubview(scroll)
-        NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: blur.contentView.leadingAnchor),
-            scroll.topAnchor.constraint(equalTo: blur.contentView.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: blur.contentView.bottomAnchor)
-        ])
-
+        backgroundColor = Self.backdrop(light: traitCollection.userInterfaceStyle == .light)
         let stack = UIStackView()
         stack.axis = .horizontal
-        stack.spacing = 6
-        stack.alignment = .center
+        stack.spacing = 3
+        stack.distribution = .fillEqually
         stack.translatesAutoresizingMaskIntoConstraints = false
-        scroll.addSubview(stack)
+        addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 10),
-            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -10),
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 6),
-            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -6),
-            stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor, constant: -12)
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4)
         ])
 
+        let more = UIButton(type: .system)
+        more.setImage(UIImage(systemName: "list.bullet"), for: .normal)
+        more.tintColor = .label
+        more.accessibilityLabel = String(localized: "Terminal keys")
+        more.accessibilityIdentifier = "terminalKeysMenu"
+        more.showsMenuAsPrimaryAction = true
+        more.menu = additionalKeys()
+        stack.addArrangedSubview(more)
         stack.addArrangedSubview(key("esc", spoken: String(localized: "Escape")) { [weak self] in self?.emit([0x1B]) })
         let ctrl = key("ctrl", spoken: String(localized: "Control")) { [weak self] in self?.modifiers.toggleCtrl(); Haptics.select() }
         ctrlButton = ctrl
@@ -137,50 +140,49 @@ final class KeyboardAccessoryView: UIInputView {
         altButton = alt
         stack.addArrangedSubview(alt)
         stack.addArrangedSubview(key("tab", glyph: "arrow.right.to.line", spoken: String(localized: "Tab")) { [weak self] in self?.emit([0x09]) })
-
-        stack.addArrangedSubview(sep())
-
-        stack.addArrangedSubview(key("left", glyph: "chevron.left", spoken: String(localized: "Arrow left")) { [weak self] in self?.emitArrow("D") })
-        stack.addArrangedSubview(key("down", glyph: "chevron.down", spoken: String(localized: "Arrow down")) { [weak self] in self?.emitArrow("B") })
-        stack.addArrangedSubview(key("up", glyph: "chevron.up", spoken: String(localized: "Arrow up")) { [weak self] in self?.emitArrow("A") })
-        stack.addArrangedSubview(key("right", glyph: "chevron.right", spoken: String(localized: "Arrow right")) { [weak self] in self?.emitArrow("C") })
-
-        stack.addArrangedSubview(sep())
-
-        let spokenSymbols: [String: String] = [
-            "`": String(localized: "Backtick"), "|": String(localized: "Pipe"),
-            "/": String(localized: "Slash"), "-": String(localized: "Minus"),
-            "~": String(localized: "Tilde"), "_": String(localized: "Underscore"),
-            "=": String(localized: "Equals"), "&": String(localized: "Ampersand"),
-            "$": String(localized: "Dollar sign")
-        ]
-        for symbol in ["`", "|", "/", "-", "~", "_", "=", "&", "$"] {
-            stack.addArrangedSubview(key(symbol, spoken: spokenSymbols[symbol]) { [weak self] in self?.emitString(symbol) })
+        for (name, glyph, code) in [("Arrow left", "chevron.left", "D"), ("Arrow down", "chevron.down", "B"),
+                                    ("Arrow up", "chevron.up", "A"), ("Arrow right", "chevron.right", "C")] {
+            stack.addArrangedSubview(key(code, glyph: glyph, spoken: NSLocalizedString(name, comment: "Terminal arrow")) { [weak self] in self?.emitArrow(code) })
         }
+    }
 
-        stack.addArrangedSubview(sep())
-
-        stack.addArrangedSubview(key("home", glyph: "arrowtriangle.left.fill", spoken: String(localized: "Home")) { [weak self] in self?.emitArrow("H") })
-        stack.addArrangedSubview(key("end", glyph: "arrowtriangle.right.fill", spoken: String(localized: "End")) { [weak self] in self?.emitArrow("F") })
-
-        // Hide lives in a fixed trailing zone — on iPhone the scrollable
-        // keys would otherwise push it off-screen.
-        let trailing = UIView()
-        trailing.translatesAutoresizingMaskIntoConstraints = false
-        blur.contentView.addSubview(trailing)
-        let hide = key("hide", glyph: "keyboard.chevron.compact.down", spoken: String(localized: "Hide keyboard")) { [weak self] in
-            self?.onHide()
+    private func additionalKeys() -> UIMenu {
+        func action(_ title: String, glyph: String, perform: @escaping (KeyboardAccessoryView) -> Void) -> UIAction {
+            UIAction(title: NSLocalizedString(title, comment: "Terminal key"), image: UIImage(systemName: glyph)) { [weak self] _ in
+                guard let self else { return }
+                perform(self)
+            }
         }
-        trailing.addSubview(hide)
-        NSLayoutConstraint.activate([
-            trailing.trailingAnchor.constraint(equalTo: blur.contentView.trailingAnchor),
-            trailing.topAnchor.constraint(equalTo: blur.contentView.topAnchor),
-            trailing.bottomAnchor.constraint(equalTo: blur.contentView.bottomAnchor),
-            trailing.widthAnchor.constraint(equalToConstant: 50),
-            scroll.trailingAnchor.constraint(equalTo: trailing.leadingAnchor),
-            hide.centerXAnchor.constraint(equalTo: trailing.centerXAnchor),
-            hide.centerYAnchor.constraint(equalTo: trailing.centerYAnchor)
+        let movement = UIMenu(options: .displayInline, children: [
+            action("Home", glyph: "arrow.left.to.line") { $0.emitArrow("H") },
+            action("End", glyph: "arrow.right.to.line") { $0.emitArrow("F") },
+            action("Page Up", glyph: "arrow.up.doc") { $0.emitCSI(5) },
+            action("Page Down", glyph: "arrow.down.doc") { $0.emitCSI(6) },
+            action("Insert", glyph: "text.insert") { $0.emitCSI(2) },
+            action("Delete", glyph: "delete.forward") { $0.emitCSI(3) }
         ])
+        let functionKeys = UIMenu(title: String(localized: "Function keys"), image: UIImage(systemName: "function"), children: (1...12).map { number in
+            UIAction(title: "F\(number)") { [weak self] _ in self?.emitFunction(number) }
+        })
+        return UIMenu(children: [movement, functionKeys,
+            action("Hide keyboard", glyph: "keyboard.chevron.compact.down") { $0.onHide() }
+        ])
+    }
+
+    private func emitCSI(_ number: Int) {
+        let modifier = modifiers.ctrl ? ";5" : modifiers.alt ? ";3" : ""
+        emit(Array("\u{1B}[\(number)\(modifier)~".utf8))
+    }
+
+    private func emitFunction(_ number: Int) {
+        guard (1...12).contains(number) else { return }
+        if number <= 4 {
+            let code = ["P", "Q", "R", "S"][number - 1]
+            let prefix = modifiers.ctrl ? "[1;5" : modifiers.alt ? "[1;3" : "O"
+            emit(Array("\u{1B}\(prefix)\(code)".utf8))
+        } else {
+            emitCSI([15, 17, 18, 19, 20, 21, 23, 24][number - 5])
+        }
     }
 
     private func key(_ title: String, glyph: String? = nil, spoken: String? = nil, action: @escaping () -> Void) -> KeyButton {
@@ -192,17 +194,6 @@ final class KeyboardAccessoryView: UIInputView {
         return button
     }
 
-    private func sep() -> UIView {
-        let view = UIView()
-        view.backgroundColor = .separator
-        view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            view.widthAnchor.constraint(equalToConstant: 0.5),
-            view.heightAnchor.constraint(equalToConstant: 24)
-        ])
-        return view
-    }
-
     private func syncModifiers() {
         ctrlButton?.isToggled = modifiers.ctrl
         altButton?.isToggled = modifiers.alt
@@ -211,11 +202,6 @@ final class KeyboardAccessoryView: UIInputView {
     private func emit(_ bytes: [UInt8]) {
         modifiers.reset()
         onSend(bytes)
-    }
-
-    private func emitString(_ s: String) {
-        modifiers.reset()
-        onSend([UInt8](s.utf8))
     }
 
     private func emitArrow(_ code: String) {
@@ -268,7 +254,7 @@ final class KeyButton: UIControl {
             let label = UILabel()
             label.translatesAutoresizingMaskIntoConstraints = false
             label.textColor = .label
-            label.font = .monospacedSystemFont(ofSize: 14, weight: .medium)
+            label.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
             label.textAlignment = .center
             label.text = title
             label.isUserInteractionEnabled = false
@@ -280,8 +266,7 @@ final class KeyButton: UIControl {
         }
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 38),
-            heightAnchor.constraint(equalToConstant: 44)
+            heightAnchor.constraint(equalToConstant: 36)
         ])
 
         addTarget(self, action: #selector(tapped), for: .touchUpInside)

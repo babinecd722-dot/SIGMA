@@ -54,21 +54,6 @@ struct TerminalScreenView: View {
         .onChange(of: session.state) { _, new in
             if new == .online { Haptics.connected() }
         }
-        .toolbar {
-            // Hidden tabs must not compete for the navigation title.
-            if isActive {
-                ToolbarItem(placement: .principal) {
-                    HStack(spacing: 8) {
-                        StatusDot(state: StatusDot.State(session.state))
-                            .accessibilityIdentifier("activeSessionStatus")
-                        Text(session.title)
-                            .font(.subheadline.weight(.medium))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-            }
-        }
     }
 
     private var showsStatus: Bool {

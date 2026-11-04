@@ -58,6 +58,7 @@ def patch(checkouts):
     replace_once(ios_terminal,
         "    var lastLongSelect: Position?",
         """    private var terminalEditMenuVisible = false
+    private var copyHoldGesture: UILongPressGestureRecognizer?
 
     private func dismissTerminalEditMenu() {
         terminalEditMenuVisible = false
@@ -86,6 +87,32 @@ def patch(checkouts):
         "extension TerminalViewDelegate {",
         """@available(iOS 16.0, visionOS 1.0, *)
 extension TerminalView: @preconcurrency UIEditMenuInteractionDelegate {
+    public func editMenuInteraction(_ interaction: UIEditMenuInteraction,
+                                    menuFor configuration: UIEditMenuConfiguration,
+                                    suggestedActions: [UIMenuElement]) -> UIMenu? {
+        // Explicit targets allow local selection with the keyboard closed.
+        // Making the terminal first responder here would resize/reflow the
+        // very text being selected underneath the user's finger.
+        var actions: [UIMenuElement] = []
+        if hasActiveSelection {
+            actions.append(UIAction(title: NSLocalizedString("Copy", comment: "Edit action"),
+                                    image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in
+                self?.copy(nil)
+            })
+        }
+        actions.append(UIAction(title: NSLocalizedString("Paste", comment: "Edit action"),
+                                image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in
+            self?.paste(nil)
+        })
+        actions.append(UIAction(title: NSLocalizedString("Select All", comment: "Edit action")) { [weak self] _ in
+            guard let self else { return }
+            self.selectAll(nil)
+            self.showContextMenu(forRegion: self.makeContextMenuRegionForSelection(),
+                                 pos: self.lastLongSelect ?? Position(col: 0, row: 0))
+        })
+        return UIMenu(children: actions)
+    }
+
     public func editMenuInteraction(_ interaction: UIEditMenuInteraction,
                                     willPresentMenuFor configuration: UIEditMenuConfiguration,
                                     animator: UIEditMenuInteractionAnimating) {
@@ -126,10 +153,9 @@ extension TerminalViewDelegate {""")
             selection.selectionMode = .character
         }
         enableSelectionPanGesture()
-        _ = becomeFirstResponder()
         frameDriver.markDirty()
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.window != nil, self.isFirstResponder else { return }
+            guard let self, self.window != nil, self.hasActiveSelection else { return }
             let region = self.hasActiveSelection ? self.makeContextMenuRegionForSelection()
                 : self.makeContextMenuRegionForTap(point: point)
             self.showContextMenu(forRegion: region, pos: hit)
@@ -137,11 +163,47 @@ extension TerminalViewDelegate {""")
     }""")
     replace_once(ios_terminal,
         "longPress.minimumPressDuration = 0.7",
-        "longPress.minimumPressDuration = 0.5")
+        """longPress.minimumPressDuration = 0.35
+        longPress.allowableMovement = 20""")
+    replace_once(ios_terminal,
+        "        addGestureRecognizer(longPress)\n",
+        """        addGestureRecognizer(longPress)
+        copyHoldGesture = longPress
+        panGestureRecognizer.require(toFail: longPress)
+        panMouseGesture?.require(toFail: longPress)
+""")
+    replace_once(ios_terminal,
+        "        panMouseGesture = gesture\n",
+        """        panMouseGesture = gesture
+        if let copyHoldGesture { gesture.require(toFail: copyHoldGesture) }
+""")
     replace_once(ios_terminal,
         "        singleTap.require(toFail: doubleTap)",
         """        singleTap.require(toFail: longPress)
         singleTap.require(toFail: doubleTap)""")
+    replace_once(ios_terminal,
+        """        // A single tap belongs to an unfocused tracking application. Reserve a deliberate double
+        // tap as the way to bring the software keyboard back.
+        if !isFirstResponder,
+           allowMouseReporting,
+           withTerminal({ $0.mouseMode.sendButtonPress() }) {
+            _ = becomeFirstResponder()
+            return
+        }
+
+        if tapAction(tapCount: 2, gestureRecognizer: gestureRecognizer) == .selectWord {
+            let hit = calculateTapHit(gesture: gestureRecognizer).grid
+            withTerminal { terminal in
+                selection.selectWordOrExpression(at: hit, in: terminal.displayBuffer)
+                selection.selectionMode = .character
+            }
+            enableSelectionPanGesture()
+            showContextMenu (forRegion: makeContextMenuRegionForSelection(), pos: hit)
+            frameDriver.markDirty()
+        }""",
+        """        // Match native text selection: double-tap selects locally;
+        // one tap already restores the keyboard for tracking TUIs.
+        selectWordForCopy(at: gestureRecognizer.location(in: self))""")
     replace_once(ios_terminal,
         "        self.panSelectionGesture = gesture\n",
         """        self.panSelectionGesture = gesture
@@ -195,6 +257,30 @@ extension TerminalViewDelegate {""")
         guard isFirstResponder else {""")
 
     tty = checkouts / "Citadel/Sources/Citadel/TTY/Client/TTY.swift"
+    replace_once(tty,
+        "    public struct CommandFailed: Error {",
+        """    /// A PTY vanished without a process exit status (disconnect/reboot).
+    public struct PTYClosedWithoutExit: Error, Sendable {
+        public init() {}
+    }
+
+    public struct CommandFailed: Error {""")
+    replace_once(tty,
+        """                } else if let exitCode = exitCode.withLockedValue({ $0 }), exitCode != 0 {
+                    streamContinuation.finish(throwing: CommandFailed(exitCode: exitCode))
+                } else {
+                    streamContinuation.finish()
+                }""",
+        """                } else if let status = exitCode.withLockedValue({ $0 }) {
+                    if status == 0 { streamContinuation.finish() }
+                    else { streamContinuation.finish(throwing: CommandFailed(exitCode: status)) }
+                } else if case .pty = mode {
+                    // Parent-channel shutdown can race its isConnected flag.
+                    // Missing exit status is not a user typing exit/logout.
+                    streamContinuation.finish(throwing: PTYClosedWithoutExit())
+                } else {
+                    streamContinuation.finish()
+                }""")
     replace_once(tty,
         "    internal let sequence: AsyncThrowingStream<ExecCommandOutput, Error>",
         """    internal let sequence: AsyncThrowingStream<ExecCommandOutput, Error>
@@ -268,7 +354,9 @@ extension TerminalViewDelegate {""")
             do {
                 let inbound = TTYOutput(sequence: output, channel: channel)
                 try await perform(inbound, TTYStdinWriter(channel: channel))
-                try await close()
+                // A successful stream already carried exit-status zero;
+                // sshd may have closed its child before our cleanup runs.
+                try? await close()
             } catch {
                 try? await close()
                 throw error

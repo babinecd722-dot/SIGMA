@@ -18,6 +18,8 @@ struct FileBrowserView: View {
 private struct FileBrowserContent: View {
     @StateObject private var vm: FileBrowserViewModel
     @ObservedObject private var transfers = TransferManager.shared
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var searchFocused: Bool
 
     @State private var preview: RemoteFile?
     @State private var renaming: RemoteFile?
@@ -112,19 +114,14 @@ private struct FileBrowserContent: View {
 
     private var base: some View {
         VStack(spacing: 0) {
+            header
+            searchField
             breadcrumbBar
             content
         }
         .background(Color.terminalSurface.ignoresSafeArea())
         .accessibilityIdentifier("filesBrowser")
-        .navigationTitle(vm.profile.displayName)
-        .navigationBarTitleDisplayMode(.inline)
-        .searchable(
-            text: $vm.searchText,
-            placement: .navigationBarDrawer(displayMode: .automatic),
-            prompt: "Search"
-        )
-        .toolbar { toolbarContent }
+        .toolbar(.hidden, for: .navigationBar)
         .task { await vm.open() }
         .onDisappear { vm.park() }
         .onChange(of: vm.path) { _, _ in selected.removeAll() }
@@ -135,6 +132,33 @@ private struct FileBrowserContent: View {
     }
 
     // MARK: - Breadcrumbs
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search", text: $vm.searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($searchFocused)
+                .accessibilityIdentifier("filesSearch")
+            if !vm.searchText.isEmpty {
+                Button {
+                    vm.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .font(.body)
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+    }
 
     private var breadcrumbBar: some View {
         ScrollViewReader { proxy in
@@ -150,7 +174,7 @@ private struct FileBrowserContent: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 6)
             }
             .onChange(of: vm.path) { _, _ in
                 if let last = vm.breadcrumbs.last {
@@ -178,7 +202,7 @@ private struct FileBrowserContent: View {
             .foregroundStyle(isLast ? Color.primary : Color.secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .terminalGlass(cornerRadius: 11)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(crumb.path == "/" ? String(localized: "Root") : crumb.name)
@@ -215,6 +239,7 @@ private struct FileBrowserContent: View {
                 row(file)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("remote-file-\(file.name)")
             .listRowBackground(Color.clear)
             .listRowSeparatorTint(Color.primary.opacity(0.08))
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -316,77 +341,87 @@ private struct FileBrowserContent: View {
 
     // MARK: - Toolbar
 
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
+    /// A fixed, opaque header keeps controls above search on every iOS
+    /// version. Nothing scrolls underneath it, so no edge gradient appears.
+    private var header: some View {
+        HStack(spacing: 8) {
             Button {
+                searchFocused = false
                 Haptics.select()
-                Task { await vm.up() }
+                if vm.canGoUp { Task { await vm.up() } }
+                else { dismiss() }
             } label: {
                 Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 36, height: 40)
+                    .background(Color.primary.opacity(0.05), in: Capsule())
             }
-            .disabled(!vm.canGoUp)
             .accessibilityLabel("Back")
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                Haptics.tap()
-                showTransfers = true
-            } label: {
-                Image(systemName: "arrow.up.arrow.down")
-                    .overlay(alignment: .topTrailing) {
-                        if transfers.activeCount > 0 {
-                            Text("\(transfers.activeCount)")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.black)
-                                .padding(3)
-                                .background(Circle().fill(Color.terminalAccent))
-                                .offset(x: 8, y: -6)
-                        }
-                    }
-            }
-            .accessibilityLabel("Transfers")
-            .accessibilityValue(
-                transfers.activeCount > 0 ? Text("\(transfers.activeCount)") : Text("")
-            )
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            if let file = selectedFile {
-                Button("Open") {
+            .accessibilityIdentifier("filesBack")
+            Text(vm.profile.displayName)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            HStack(spacing: 0) {
+                Button {
                     Haptics.tap()
-                    preview = file
-                }
-            }
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                Haptics.tap()
-                showImporter = true
-            } label: {
-                Image(systemName: "arrow.up.doc")
-            }
-            .accessibilityLabel("Upload")
-            .accessibilityIdentifier("uploadButton")
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Button {
-                    newFolderName = ""
-                    showNewFolder = true
+                    showTransfers = true
                 } label: {
-                    Label("New Folder", systemImage: "folder.badge.plus")
+                    Image(systemName: "arrow.up.arrow.down")
+                        .overlay(alignment: .topTrailing) {
+                            if transfers.activeCount > 0 {
+                                Circle().fill(Color.terminalAccent).frame(width: 5, height: 5).offset(x: 5, y: -3)
+                            }
+                        }
+                        .frame(width: 36, height: 40)
                 }
-                Divider()
+                .accessibilityLabel("Transfers")
+                .accessibilityValue(transfers.activeCount > 0 ? Text("\(transfers.activeCount)") : Text(""))
+                if let file = selectedFile {
+                    Button {
+                        Haptics.tap()
+                        searchFocused = false
+                        preview = file
+                    } label: {
+                        Image(systemName: "arrow.up.right.square").frame(width: 36, height: 40)
+                    }
+                    .accessibilityLabel("Open")
+                }
                 Button {
-                    Task { await vm.reload() }
+                    Haptics.tap()
+                    showImporter = true
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    Image(systemName: "arrow.up.doc").frame(width: 36, height: 40)
                 }
-            } label: {
-                Image(systemName: "plus")
+                .accessibilityLabel("Upload")
+                .accessibilityIdentifier("uploadButton")
+                Menu {
+                    Button {
+                        newFolderName = ""
+                        showNewFolder = true
+                    } label: {
+                        Label("New Folder", systemImage: "folder.badge.plus")
+                    }
+                    Divider()
+                    Button {
+                        Task { await vm.reload() }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                } label: {
+                    Image(systemName: "plus").frame(width: 36, height: 40)
+                }
+                .accessibilityLabel("Add")
             }
-            .accessibilityLabel("Add")
+            .font(.system(size: 17, weight: .medium))
+            .background(Color.primary.opacity(0.05), in: Capsule())
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .frame(height: 48)
+        .accessibilityIdentifier("filesHeader")
     }
 
     // MARK: - Actions

@@ -275,10 +275,23 @@ actor SSHConnection {
 
     // MARK: - Channels
 
+    /// Shared by simultaneous tabs, so no PTY reads old history while a
+    /// migration is still running. A failed cleanup never prevents login.
+    private var legacyHistoryTask: Task<Void, Never>?
+
     /// Authenticate without handing the mutable library client across
     /// the actor boundary to the UI.
     func prepareTransport() async throws {
         _ = try await ensureConnected()
+        if let task = legacyHistoryTask {
+            await task.value
+        } else {
+            let task = Task { [weak self] in
+                _ = try? await self?.execute(LegacyShellHistory.cleanupCommand)
+            }
+            legacyHistoryTask = task
+            await task.value
+        }
     }
 
     func openShell(cols: Int, rows: Int, command: String? = nil) async throws -> ShellChannel {

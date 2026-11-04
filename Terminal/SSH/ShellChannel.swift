@@ -17,7 +17,7 @@ actor ShellChannel {
 
     enum Event: Sendable {
         case output(Data)
-        case closed(Error?)
+        case closed(Error?, processExited: Bool)
     }
 
     private var writer: Citadel.TTYStdinWriter?
@@ -97,7 +97,7 @@ actor ShellChannel {
                         if Task.isCancelled { return }
                     }
                 }
-                await self?.finish(nil)
+                await self?.finish(nil, processExited: true)
             } catch {
                 await self?.fail(error)
             }
@@ -195,11 +195,11 @@ actor ShellChannel {
     /// consumer drains every byte before it sees the end. The writer is
     /// dead from here on — drop it so later sends and resizes can't
     /// write into a corpse channel.
-    private func finish(_ error: Error?) {
+    private func finish(_ error: Error?, processExited: Bool = false) {
         guard !finished else { return }
         finished = true
         writer = nil
-        pending.append(.closed(error))
+        pending.append(.closed(error, processExited: processExited))
         resumeEmptyWaiters()
         resumeFullWaiters()
         if let rc = readyContinuation {

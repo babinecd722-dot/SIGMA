@@ -19,9 +19,12 @@ jobs:
   build:
     name: Verify terminal and build IPA
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify legacy history migration
+        run: python3 scripts/test_legacy_history.py
 
       - name: Select Xcode
         run: |
@@ -151,6 +154,15 @@ jobs:
           printf 'export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"\n' | sudo tee /Users/shotbot/.zshenv >/dev/null
           printf 'HISTFILE=~/.zsh_history\nHISTSIZE=1000\nSAVEHIST=1000\nPROMPT="shotbot %% "\nprintf "SHOT_READY\\n"\n' | sudo tee /Users/shotbot/.zshrc >/dev/null
           printf 'set -g mouse on\n' | sudo tee /Users/shotbot/.tmux.conf >/dev/null
+          # Seed the exact command emitted by old clients. The app must
+          # migrate it, rather than just testing an already-clean account.
+          python3 - <<'PY' | sudo tee /Users/shotbot/.zsh_history >/dev/null
+          name = 'term-4FA9AF5E-E64C-45E4-BE92-4ACC2761F27D'
+          command = f"tmux new-session -d -s '{name}' 2>/dev/null; tmux set-option -t '{name}' status off; exec tmux attach -t '{name}'"
+          print(': 1700000000:0;' + command)
+          PY
+          sudo chown shotbot:staff /Users/shotbot/.zsh_history
+          sudo chmod 600 /Users/shotbot/.zsh_history
           sudo chown shotbot:staff /Users/shotbot/.zshenv /Users/shotbot/.zshrc /Users/shotbot/.tmux.conf
           sudo dscl . -passwd /Users/shotbot 'Term1n4lSh0ts' \
             || printf 'Term1n4lSh0ts\n' | sudo dscl . -passwd /Users/shotbot
@@ -175,6 +187,8 @@ jobs:
             nc -z 127.0.0.1 22222 && break || sleep 1
           done
           nc -z 127.0.0.1 22222
+          bash scripts/restart_ssh_fixture.sh "$PWD" > build/restart-fixture.log 2>&1 &
+          echo "$!" > build/restart-fixture.pid
 
       - name: Verify foreground appearance, scrollback, history and reconnect
         run: |
@@ -186,14 +200,15 @@ jobs:
             -destination "platform=iOS Simulator,id=$UDID" \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 1200 \
-            -maximum-test-execution-time-allowance 1500 \
+            -default-test-execution-time-allowance 2100 \
+            -maximum-test-execution-time-allowance 2400 \
             -resultBundlePath build/ui-tests.xcresult \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee test.log
 
       - name: Stop local SSH fixture
         if: always()
         run: |
+          if [ -f build/restart-fixture.pid ]; then kill "$(cat build/restart-fixture.pid)" || true; fi
           if [ -f build/sshd.pid ]; then sudo kill "$(cat build/sshd.pid)" || true; fi
           if [ -f build/sshd.log ]; then sudo cat build/sshd.log > build/ssh-fixture.log; fi
 
@@ -213,6 +228,7 @@ jobs:
             shots/**/manifest.json
             test.log
             build/ssh-fixture.log
+            build/restart-fixture.log
           retention-days: 30
 
       - name: Upload UI result bundle

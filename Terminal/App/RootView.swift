@@ -5,6 +5,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var engine: SessionEngine
     @EnvironmentObject var keepAlive: KeepAliveEngine
+    @EnvironmentObject private var settings: SettingsStore
     @AppStorage("onboarding.done") private var onboardingDone = false
 
     @State private var showSessionPicker = false
@@ -199,74 +200,79 @@ struct RootView: View {
             // under the tab bar.
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 SessionTabBarView(
-                    onNewSession: { showSessionPicker = true }
+                    onNewSession: { showSessionPicker = true },
+                    menu: { workspaceMenu }
                 )
-                .padding(.bottom, 4)
+                .padding(.vertical, 2)
                 .background(Color.terminalSurface.ignoresSafeArea(.container, edges: .bottom))
             }
-            .navigationBarTitleDisplayMode(.inline)
-            // The scroll view's palette may differ from app appearance.
-            // Opaque chrome keeps titles, status icons and tabs readable.
-            .toolbarBackground(Color.terminalSurface, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(colorScheme, for: .navigationBar)
-            .toolbar { workspaceToolbar }
+            .toolbar(.hidden, for: .navigationBar)
         }
+        // Paint behind the system keyboard's rounded upper corners as
+        // well. A container-only safe-area background leaves black holes.
+        .background(keyboardBackdrop.ignoresSafeArea())
     }
 
     // MARK: - Toolbars
 
-    @ToolbarContentBuilder
-    private var workspaceToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                if let profile = activeProfile {
-                    Button {
-                        showFilesFor = profile
-                    } label: {
-                        Label("Files", systemImage: "folder")
-                    }
-                    Button {
-                        showForwardsFor = profile
-                    } label: {
-                        Label("Forwards", systemImage: "arrow.left.arrow.right")
-                    }
-                    Button {
-                        activeSession?.reconnect()
-                    } label: {
-                        Label("Reconnect", systemImage: "arrow.clockwise")
-                    }
-                    Button {
-                        showCommands = true
-                    } label: {
-                        Label("Snippets", systemImage: "text.line.first.and.arrowtriangle.forward")
-                    }
-                    Divider()
+    private var workspaceMenu: some View {
+        Menu {
+            if let profile = activeProfile {
+                Button {
+                    showFilesFor = profile
+                } label: {
+                    Label("Files", systemImage: "folder")
                 }
                 Button {
-                    showServers = true
+                    showForwardsFor = profile
                 } label: {
-                    Label("Servers", systemImage: "server.rack")
+                    Label("Forwards", systemImage: "arrow.left.arrow.right")
                 }
                 Button {
-                    showSettings = true
+                    activeSession?.reconnect()
                 } label: {
-                    Label("Settings", systemImage: "gearshape")
+                    Label("Reconnect", systemImage: "arrow.clockwise")
                 }
-                if activeSession != nil {
-                    Divider()
-                    Button(role: .destructive) {
-                        if let s = activeSession { engine.closeSession(s) }
-                    } label: {
-                        Label("Close", systemImage: "xmark")
-                    }
+                Button {
+                    showCommands = true
+                } label: {
+                    Label("Snippets", systemImage: "text.line.first.and.arrowtriangle.forward")
                 }
-            } label: {
-                Image(systemName: "ellipsis")
+                Divider()
             }
-            .accessibilityLabel("More")
-            .accessibilityIdentifier("workspaceMenu")
+            Button {
+                showServers = true
+            } label: {
+                Label("Servers", systemImage: "server.rack")
+            }
+            Button {
+                showSettings = true
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+            if activeSession != nil {
+                Divider()
+                Button(role: .destructive) {
+                    if let s = activeSession { engine.closeSession(s) }
+                } label: {
+                    Label("Close", systemImage: "xmark")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("More")
+        .accessibilityIdentifier("workspaceMenu")
+    }
+
+    private var keyboardBackdrop: Color {
+        let theme = TerminalTheme.theme(id: settings.settings.themeID == "auto"
+            ? (colorScheme == .dark ? "pro" : "paper") : settings.settings.themeID)
+        return Color(uiColor: KeyboardAccessoryView.backdrop(light: theme.id == "paper"))
     }
 
     private var activeSession: TerminalSession? {

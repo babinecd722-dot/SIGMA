@@ -149,9 +149,7 @@ struct TerminalSurface: UIViewRepresentable {
             // attach because the cached bar may point at an old view.
             TerminalSurface.wireAccessory(view, coordinator: self)
             // Swipe-to-dismiss on the terminal's scroll view.
-            view.subviews
-                .compactMap { $0 as? UIScrollView }
-                .forEach { $0.keyboardDismissMode = .interactive }
+            view.keyboardDismissMode = .interactive
         }
 
         /// The view takes ownership of the output handler — any bytes

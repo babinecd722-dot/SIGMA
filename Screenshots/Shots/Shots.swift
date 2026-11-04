@@ -49,9 +49,19 @@ final class Shots: XCTestCase {
         shot("01-connected-dark")
         assertCleanTerminal()
 
+        XCTAssertLessThan(terminal.frame.minY, 95, "Terminal must start below the status bar, without a navigation header")
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.01)).press(forDuration: 0.5)
+        XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 10))
+        shot("01-native-copy-keyboard-closed")
+        tap("Copy")
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "Holding output must not open the keyboard")
+
         terminal.tap()
         let tips = app.buttons["Continue"].firstMatch
         if tips.waitForExistence(timeout: 2) { tips.tap() }
+        assertControlAvailable()
+        try assertKeyboardCorners(light: false)
+        shot("01-compact-keyboard-dark")
         app.typeText("printf 'USER_COMMAND_OK\\n'\n")
         waitForText("USER_COMMAND_OK")
         // A hold must select local text and offer native Copy even
@@ -67,6 +77,9 @@ final class Shots: XCTestCase {
         terminal.swipeDown()
         assertCleanTerminal()
         shot("02-scrollback")
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.15)).press(forDuration: 0.5)
+        tap("Copy")
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
         terminal.swipeUp()
 
         // Change appearance while the app stays foregrounded. The
@@ -92,9 +105,11 @@ final class Shots: XCTestCase {
         tap("theme-graphite")
         app.navigationBars["Theme"].buttons.firstMatch.tap()
         dismissSettings()
+
         XCTAssertLessThan(try terminalBackgroundBrightness(), 0.25)
         shot("05-graphite-light-chrome")
         try assertChrome(light: true)
+
         openSettings()
         tap("Theme")
         tap("theme-paper")
@@ -137,6 +152,32 @@ final class Shots: XCTestCase {
         hideKeyboard()
         shot("06-reconnected-light")
         try assertChrome(light: true)
+
+        terminal.tap()
+        assertControlAvailable()
+        try assertKeyboardCorners(light: true)
+        shot("05-compact-keyboard-light")
+        hideKeyboard()
+        try verifyFiles(label: "07-files-before-restart")
+
+        // Restart only the dedicated CI SSH account/server. This loses
+        // tmux state like a reboot, without rebooting the runner itself.
+        terminal.tap()
+        assertControlAvailable()
+        app.typeText("touch ~/.sigma-test-restart\n")
+        waitForText("SHOT_READY")
+        app.typeText("printf 'AFTER_RESTART_OK\\n'\n")
+        waitForText("AFTER_RESTART_OK")
+        assertCleanTerminal()
+        hideKeyboard()
+        shot("08-after-server-restart")
+        try verifyFiles(label: "09-files-after-restart")
+        terminal.tap()
+        assertControlAvailable()
+        app.typeText("exit\n")
+        let ended = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == NO"), object: terminal)
+        XCTAssertEqual(XCTWaiter.wait(for: [ended], timeout: 20), .completed, app.debugDescription)
+        shot("10-normal-exit")
     }
 
     private var terminal: XCUIElement { app.descendants(matching: .any)["terminalSurface"].firstMatch }
@@ -201,12 +242,53 @@ final class Shots: XCTestCase {
     }
 
     private func hideKeyboard() {
-        let button = app.buttons["Hide keyboard"].firstMatch
-        if button.exists {
-            button.tap()
-            let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == NO"), object: button)
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists {
+            tap("terminalKeysMenu")
+            tap("Hide keyboard")
+            let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == NO"), object: keyboard)
             XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 10), .completed)
         }
+    }
+
+    private func assertKeyboardCorners(light: Bool) throws {
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        XCTAssertLessThanOrEqual(app.buttons["Control"].firstMatch.frame.height, 40)
+        XCTAssertFalse(app.buttons["Backtick"].exists)
+        let image = app.screenshot().image
+        let keyboardTop = app.buttons["Control"].firstMatch.frame.maxY + 4
+        let y = (keyboardTop + 3) / app.frame.height
+        let reference = try brightness(image, x: 0.5, y: (keyboardTop + 12) / app.frame.height)
+        for x in [0.004, 0.986] {
+            let value = try brightness(image, x: x, y: y)
+            XCTAssertGreaterThan(value, light ? 0.6 : 0.05, "Keyboard corner at x=\(x) must not be black")
+            XCTAssertLessThan(abs(value - reference), 0.08, "Keyboard corner must match its backing")
+        }
+    }
+
+    private func verifyFiles(label: String) throws {
+        tap("workspaceMenu")
+        tap("Files")
+        let search = app.textFields["filesSearch"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertLessThan(app.buttons["uploadButton"].firstMatch.frame.maxY, search.frame.minY)
+        shot(label)
+        search.tap()
+        search.typeText("welcome")
+        tap("remote-file-welcome.txt")
+        tap("Open")
+        XCTAssertTrue(app.navigationBars["welcome.txt"].waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.buttons["Save"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        shot(label + "-preview")
+        tap("Done")
+        let browser = app.descendants(matching: .any)["filesBrowser"].firstMatch
+        for _ in 0..<8 {
+            if !browser.exists { break }
+            tap("filesBack")
+            sleep(1)
+        }
+        XCTAssertFalse(browser.exists, app.debugDescription)
     }
 
     private func dismissPasswordSaveOffer() {
@@ -228,7 +310,7 @@ final class Shots: XCTestCase {
         let image = app.screenshot().image
         // Blank parts of the navigation bar and bottom safe area must
         // follow app appearance, independently of the terminal palette.
-        for y in [0.08, 0.97] {
+        for y in [0.015, 0.97] {
             let value = try brightness(image, x: 0.04, y: y)
             if light { XCTAssertGreaterThan(value, 0.85, "Light chrome at y=\(y)") }
             else { XCTAssertLessThan(value, 0.2, "Dark chrome at y=\(y)") }

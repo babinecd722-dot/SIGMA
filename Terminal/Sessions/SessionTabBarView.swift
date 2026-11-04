@@ -2,14 +2,16 @@ import SwiftUI
 
 /// Floating strip over the terminal: one pill per live session,
 /// plus create / overview affordances. State is glyph-only.
-struct SessionTabBarView: View {
+struct SessionTabBarView<MenuContent: View>: View {
     @EnvironmentObject private var engine: SessionEngine
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let onNewSession: () -> Void
+    private let menu: MenuContent
 
-    init(onNewSession: @escaping () -> Void) {
+    init(onNewSession: @escaping () -> Void, @ViewBuilder menu: () -> MenuContent) {
         self.onNewSession = onNewSession
+        self.menu = menu()
     }
 
     var body: some View {
@@ -36,13 +38,14 @@ struct SessionTabBarView: View {
             }
 
             HStack(spacing: 0) {
+                menu
                 Button {
                     Haptics.tap()
                     onNewSession()
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 17, weight: .medium))
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(width: 40, height: 40)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -50,9 +53,10 @@ struct SessionTabBarView: View {
             }
             .padding(.trailing, 4)
         }
-        .frame(minHeight: 44)
-        .terminalGlass(cornerRadius: 22)
-        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .terminalGlass(cornerRadius: 20)
+        .padding(.horizontal, 8)
+        .accessibilityIdentifier("sessionTabBar")
     }
 }
 
@@ -73,14 +77,15 @@ private struct SessionPillView: View {
         } label: {
             HStack(spacing: 7) {
                 StatusDot(state: StatusDot.State(session.state))
+                    .accessibilityHidden(true)
                 Text(session.title)
-                    .font(.system(.subheadline, weight: isActive ? .semibold : .regular))
+                    .font(.system(.caption, weight: isActive ? .semibold : .regular))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(maxWidth: 240)
+                    .frame(maxWidth: 160)
             }
             .padding(.horizontal, 12)
-            .frame(minHeight: 44)
+            .frame(height: 32)
             .background(
                 Capsule(style: .continuous)
                     .fill(Color.primary.opacity(isActive ? 0.16 : 0))
@@ -90,6 +95,9 @@ private struct SessionPillView: View {
         .buttonStyle(.plain)
         .foregroundStyle(isActive ? .primary : .secondary)
         .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityLabel(Text(session.title))
+        .accessibilityValue(Text(StatusDot.State(session.state).accessibilityText))
+        .accessibilityIdentifier(isActive ? "activeSessionStatus" : "session-\(session.id)")
         .contextMenu {
             Button {
                 session.reconnect()
