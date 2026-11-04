@@ -180,6 +180,7 @@ jobs:
           AllowUsers shotbot
           LoginGraceTime 60
           LogLevel VERBOSE
+          Subsystem sftp internal-sftp
           EOF
           sudo /usr/sbin/sshd -t -f "$PWD/build/sshd_config"
           sudo /usr/sbin/sshd -f "$PWD/build/sshd_config" -E "$PWD/build/sshd.log"

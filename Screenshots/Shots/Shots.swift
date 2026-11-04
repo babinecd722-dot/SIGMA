@@ -164,7 +164,9 @@ final class Shots: XCTestCase {
         // tmux state like a reboot, without rebooting the runner itself.
         terminal.tap()
         assertControlAvailable()
-        app.typeText("touch ~/.sigma-test-restart\n")
+        // Clear the old prompt first: only the replacement shell may
+        // satisfy SHOT_READY after the fixture has actually restarted.
+        app.typeText("printf '\\033[2J\\033[3J\\033[H'; touch ~/.sigma-test-restart\n")
         waitForText("SHOT_READY")
         app.typeText("printf 'AFTER_RESTART_OK\\n'\n")
         waitForText("AFTER_RESTART_OK")
@@ -273,6 +275,7 @@ final class Shots: XCTestCase {
         let search = app.textFields["filesSearch"].firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertLessThan(app.buttons["uploadButton"].firstMatch.frame.maxY, search.frame.minY)
+        XCTAssertTrue(app.descendants(matching: .any)["remote-file-welcome.txt"].firstMatch.waitForExistence(timeout: 25), app.debugDescription)
         shot(label)
         search.tap()
         search.typeText("welcome")

@@ -390,6 +390,27 @@ extension TerminalViewDelegate {""")
         var clientConfiguration = SSHClientConfiguration(
             userAuthDelegate: settings.authenticationMethod(),
             serverAuthDelegate: HandshakeHostKeyValidator(base: settings.hostKeyValidator, handshake: handshakeHandler)""")
+    sftp_client = checkouts / "Citadel/Sources/Citadel/SFTP/Client/SFTPClient.swift"
+    text = sftp_client.read_text()
+    start = text.index("    public func openSFTP(\n")
+    end = text.index("\n}\n\n/// A tracker for in-flight SFTP requests.", start)
+    opening = Path(__file__).with_name("citadel_sftp_open.swift").read_text().rstrip()
+    write_source(sftp_client, text[:start] + opening + text[end:])
+    sftp_inbound = checkouts / "Citadel/Sources/Citadel/SFTP/Client/SFTPClientInboundHandler.swift"
+    replace_once(sftp_inbound,
+        "    func channelRead(context: ChannelHandlerContext, data: NIOAny) {",
+        """    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if event is ChannelFailureEvent {
+            // A rejected subsystem may leave the SSH child open. Surface
+            // its refusal immediately instead of waiting forever for VERSION.
+            responses.sftpVersion.fail(CitadelError.channelFailure)
+            context.close(promise: nil)
+        } else {
+            context.fireUserInboundEventTriggered(event)
+        }
+    }
+
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {""")
     serializer = checkouts / "Citadel/Sources/Citadel/SFTP/SFTPSerializer.swift"
     replace_once(serializer,
         "            out.writeSSHString(rename.newPath)\n            out.writeInteger(rename.flags)",
