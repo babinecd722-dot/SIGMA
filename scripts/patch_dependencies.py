@@ -68,12 +68,13 @@ def patch(checkouts):
         UIMenuController.shared.hideMenu()
     }
 
-    open override func resignFirstResponder() -> Bool {
-        dismissTerminalEditMenu()
-        return super.resignFirstResponder()
-    }
-
     var lastLongSelect: Position?""")
+    replace_once(ios_terminal,
+        """    open override func resignFirstResponder() -> Bool {
+        let code = super.resignFirstResponder()""",
+        """    open override func resignFirstResponder() -> Bool {
+        dismissTerminalEditMenu()
+        let code = super.resignFirstResponder()""")
     replace_once(ios_terminal,
         """            if UIMenuController.shared.isMenuVisible {
                 UIMenuController.shared.hideMenu()
@@ -84,7 +85,7 @@ def patch(checkouts):
     replace_once(ios_terminal,
         "extension TerminalViewDelegate {",
         """@available(iOS 16.0, visionOS 1.0, *)
-extension TerminalView: UIEditMenuInteractionDelegate {
+extension TerminalView: @preconcurrency UIEditMenuInteractionDelegate {
     public func editMenuInteraction(_ interaction: UIEditMenuInteraction,
                                     willPresentMenuFor configuration: UIEditMenuConfiguration,
                                     animator: UIEditMenuInteractionAnimating) {
