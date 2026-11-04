@@ -203,17 +203,25 @@ jobs:
           mkdir -p shots
           xcrun xcresulttool export attachments --path build/ui-tests.xcresult --output-path shots || true
 
-      - name: Upload screenshots and test results
+      - name: Upload screenshots and UI log
         if: always() && hashFiles('build/ui-tests.xcresult/Info.plist') != ''
         uses: actions/upload-artifact@v4
         with:
           name: ui-screenshots
           path: |
-            shots/
-            build/ui-tests.xcresult
+            shots/**/*.png
+            shots/**/manifest.json
             test.log
             build/ssh-fixture.log
           retention-days: 30
+
+      - name: Upload UI result bundle
+        if: always() && hashFiles('build/ui-tests.xcresult/Info.plist') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: build/ui-tests.xcresult
+          retention-days: 7
 
       - name: Archive (unsigned)
         run: |

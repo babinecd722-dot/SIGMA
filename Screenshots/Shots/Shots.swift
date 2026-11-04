@@ -59,6 +59,8 @@ final class Shots: XCTestCase {
         terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.01)).press(forDuration: 0.7)
         shot("01-native-copy-menu")
         tap("Copy")
+        // The native menu must release input immediately after Copy.
+        assertControlAvailable()
         app.typeText("for i in {1..50}; do echo row-$i; done\n")
         waitForText("row-50")
         hideKeyboard()
@@ -124,6 +126,7 @@ final class Shots: XCTestCase {
         waitForText("row-50") // tmux retained the existing shell
         assertCleanTerminal()
         terminal.tap()
+        shot("06-reconnected-keyboard")
         // Ctrl-C cancels copy mode or clears the prompt. A standalone
         // Escape can instead turn the next 'h' into a shell Meta chord.
         tap("Control")
@@ -153,7 +156,19 @@ final class Shots: XCTestCase {
         }
         let element = app.descendants(matching: .any)[id].firstMatch
         XCTAssertTrue(element.waitForExistence(timeout: 15), "Missing \(id): \(app.debugDescription)")
+        let available = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == YES"), object: element)
+        let result = XCTWaiter.wait(for: [available], timeout: 10)
+        if result != .completed { shot("unavailable-\(id)") }
+        XCTAssertEqual(result, .completed, "Unavailable \(id): \(app.debugDescription)")
         element.tap()
+    }
+
+    private func assertControlAvailable() {
+        let control = app.buttons["Control"].firstMatch
+        let available = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == YES"), object: control)
+        let result = XCTWaiter.wait(for: [available], timeout: 10)
+        if result != .completed { shot("unavailable-keyboard-after-copy") }
+        XCTAssertEqual(result, .completed, app.debugDescription)
     }
 
     private func waitForText(_ text: String) {

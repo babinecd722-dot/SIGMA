@@ -42,18 +42,66 @@ def patch(checkouts):
             if let existing = interactions.compactMap({ $0 as? UIEditMenuInteraction }).first {
                 interaction = existing
             } else {
-                interaction = UIEditMenuInteraction(delegate: nil)
+                interaction = UIEditMenuInteraction(delegate: self)
                 addInteraction(interaction)
             }
             let visible = forRegion.intersection(bounds)
             let anchor = visible.isNull ? CGPoint(x: bounds.midX, y: bounds.midY)
                 : CGPoint(x: visible.midX, y: visible.minY)
+            terminalEditMenuVisible = true
             interaction.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: anchor))
             return
         }
 
         // Configure the shared menu controller
         let menuController = UIMenuController.shared""")
+    replace_once(ios_terminal,
+        "    var lastLongSelect: Position?",
+        """    private var terminalEditMenuVisible = false
+
+    private func dismissTerminalEditMenu() {
+        terminalEditMenuVisible = false
+        if #available(iOS 16.0, visionOS 1.0, *) {
+            interactions.compactMap { $0 as? UIEditMenuInteraction }
+                .forEach { $0.dismissMenu() }
+        }
+        UIMenuController.shared.hideMenu()
+    }
+
+    open override func resignFirstResponder() -> Bool {
+        dismissTerminalEditMenu()
+        return super.resignFirstResponder()
+    }
+
+    var lastLongSelect: Position?""")
+    replace_once(ios_terminal,
+        """            if UIMenuController.shared.isMenuVisible {
+                UIMenuController.shared.hideMenu()
+            } else {""",
+        """            if terminalEditMenuVisible || UIMenuController.shared.isMenuVisible {
+                dismissTerminalEditMenu()
+            } else {""")
+    replace_once(ios_terminal,
+        "extension TerminalViewDelegate {",
+        """@available(iOS 16.0, visionOS 1.0, *)
+extension TerminalView: UIEditMenuInteractionDelegate {
+    public func editMenuInteraction(_ interaction: UIEditMenuInteraction,
+                                    willPresentMenuFor configuration: UIEditMenuConfiguration,
+                                    animator: UIEditMenuInteractionAnimating) {
+        terminalEditMenuVisible = true
+    }
+
+    public func editMenuInteraction(_ interaction: UIEditMenuInteraction,
+                                    willDismissMenuFor configuration: UIEditMenuConfiguration,
+                                    animator: UIEditMenuInteractionAnimating) {
+        terminalEditMenuVisible = false
+    }
+}
+
+extension TerminalViewDelegate {""")
+    for signature in ["    @objc open override func copy(_ sender: Any?) {",
+                      "    @objc open override func paste (_ sender: Any?) {"]:
+        replace_once(ios_terminal, signature, signature + "\n        dismissTerminalEditMenu()")
     replace_once(ios_terminal,
         """         if gestureRecognizer.state == .began {
              let _ = self.becomeFirstResponder()
@@ -80,7 +128,7 @@ def patch(checkouts):
         _ = becomeFirstResponder()
         frameDriver.markDirty()
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.window != nil else { return }
+            guard let self, self.window != nil, self.isFirstResponder else { return }
             let region = self.hasActiveSelection ? self.makeContextMenuRegionForSelection()
                 : self.makeContextMenuRegionForTap(point: point)
             self.showContextMenu(forRegion: region, pos: hit)
@@ -113,10 +161,7 @@ def patch(checkouts):
             self.refreshProgramScrollGesture()
 
             if !self.withTerminal({ _ in self.selection.active }) {
-                if #available(iOS 16.0, visionOS 1.0, *) {
-                    self.interactions.compactMap { $0 as? UIEditMenuInteraction }
-                        .forEach { $0.dismissMenu() }
-                }""")
+                self.dismissTerminalEditMenu()""")
     replace_once(ios_terminal,
         """        // Global reverse video needs an opaque background for its swapped text color.
         if reverseColorsActiveValue() {
