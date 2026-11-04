@@ -53,6 +53,7 @@ final class KeyboardAccessoryView: UIInputView {
 
     private var ctrlButton: KeyButton?
     private var altButton: KeyButton?
+    private let cornerBacking = CAShapeLayer()
 
     /// One bar per session: recreating the input view on every SwiftUI
     /// diff steals/represents the keyboard — that was the flicker.
@@ -80,6 +81,9 @@ final class KeyboardAccessoryView: UIInputView {
     init() {
         super.init(frame: CGRect(x: 0, y: 0, width: 0, height: 44), inputViewStyle: .keyboard)
         accessibilityIdentifier = "keyboardAccessory"
+        clipsToBounds = false
+        cornerBacking.isHidden = true
+        layer.insertSublayer(cornerBacking, at: 0)
         bind(modifiers: modifiers)
         build()
     }
@@ -97,7 +101,7 @@ final class KeyboardAccessoryView: UIInputView {
     /// Match the opaque system keyboard backing, including its rounded
     /// corners. The bar has no horizontally scrolling content.
     static func backdrop(light: Bool) -> UIColor {
-        light ? UIColor(white: 0.94, alpha: 1) : UIColor(white: 0.12, alpha: 1)
+        light ? UIColor(white: 0.94, alpha: 1) : UIColor(white: 0.09, alpha: 1)
     }
 
     override var intrinsicContentSize: CGSize {
@@ -107,6 +111,51 @@ final class KeyboardAccessoryView: UIInputView {
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         backgroundColor = Self.backdrop(light: traitCollection.userInterfaceStyle == .light)
+        updateCornerBacking()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateCornerBacking()
+    }
+
+    private func updateCornerBacking() {
+        // iOS 26 draws the phone keyboard with rounded upper corners in
+        // another window. A scene background cannot fill those cutouts.
+        // Extend only two passive corner wedges below our own accessory;
+        // no system view, mask, keyboard key or hit region is modified.
+        guard #available(iOS 26.0, *), traitCollection.userInterfaceIdiom == .phone else {
+            cornerBacking.isHidden = true
+            return
+        }
+        let radius: CGFloat = traitCollection.verticalSizeClass == .compact ? 16 : 32
+        let width = bounds.width
+        guard width > radius * 2, bounds.height > 0 else {
+            cornerBacking.isHidden = true
+            return
+        }
+        let k: CGFloat = 0.55228475
+        let path = UIBezierPath()
+        path.move(to: .zero)
+        path.addLine(to: CGPoint(x: radius, y: 0))
+        path.addCurve(to: CGPoint(x: 0, y: radius),
+                      controlPoint1: CGPoint(x: radius * (1 - k), y: 0),
+                      controlPoint2: CGPoint(x: 0, y: radius * (1 - k)))
+        path.close()
+        path.move(to: CGPoint(x: width, y: 0))
+        path.addLine(to: CGPoint(x: width - radius, y: 0))
+        path.addCurve(to: CGPoint(x: width, y: radius),
+                      controlPoint1: CGPoint(x: width - radius * (1 - k), y: 0),
+                      controlPoint2: CGPoint(x: width, y: radius * (1 - k)))
+        path.close()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cornerBacking.frame = CGRect(x: 0, y: bounds.height, width: width, height: radius)
+        cornerBacking.path = path.cgPath
+        cornerBacking.fillColor = backgroundColor?.cgColor
+        cornerBacking.contentsScale = traitCollection.displayScale
+        cornerBacking.isHidden = false
+        CATransaction.commit()
     }
 
     private func build() {

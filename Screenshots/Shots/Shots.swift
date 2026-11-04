@@ -60,8 +60,8 @@ final class Shots: XCTestCase {
         let tips = app.buttons["Continue"].firstMatch
         if tips.waitForExistence(timeout: 2) { tips.tap() }
         assertControlAvailable()
-        try assertKeyboardCorners(light: false)
         shot("01-compact-keyboard-dark")
+        try assertKeyboardCorners(light: false)
         app.typeText("printf 'USER_COMMAND_OK\\n'\n")
         waitForText("USER_COMMAND_OK")
         // A hold must select local text and offer native Copy even
@@ -155,8 +155,8 @@ final class Shots: XCTestCase {
 
         terminal.tap()
         assertControlAvailable()
-        try assertKeyboardCorners(light: true)
         shot("05-compact-keyboard-light")
+        try assertKeyboardCorners(light: true)
         hideKeyboard()
         try verifyFiles(label: "07-files-before-restart")
 
