@@ -56,7 +56,6 @@ struct SessionTabBarView<MenuContent: View>: View {
         .frame(height: 40)
         .terminalGlass(cornerRadius: 20)
         .padding(.horizontal, 8)
-        .accessibilityIdentifier("sessionTabBar")
     }
 }
 

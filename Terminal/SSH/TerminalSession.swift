@@ -71,6 +71,9 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// never fires on it, but an explicit reconnect() recovers cleanly.
     private var authGated = false
     private static let maxRetryAttempts = 5
+    /// RIS in SwiftTerm deliberately preserves cursor visibility; a new
+    /// PTY must also undo a previous application's hidden-cursor mode.
+    static let freshPTYReset = Data("\u{1b}c\u{1b}[?25h".utf8)
     /// Set after the user consents once — OSC 52 writes are then allowed
     /// for the rest of this session's life.
     var clipboardAllowed = false
@@ -382,7 +385,7 @@ final class TerminalSession: ObservableObject, Identifiable {
         // stale mouse/alternate-screen state across a server restart.
         feedBuffer.removeAll(keepingCapacity: true)
         pendingOutput.removeAll(keepingCapacity: true)
-        let reset = Data([0x1B, 0x63]) // local RIS; never sent to the server
+        let reset = Self.freshPTYReset // local control; never sent to the server
         if onOutput != nil {
             feedBuffer.append(reset)
             scheduleFlush()

@@ -133,7 +133,7 @@ final class Shots: XCTestCase {
 
         tap("workspaceMenu")
         tap("Reconnect")
-        let connected = NSPredicate(format: "value == %@", "Connected")
+        let connected = NSPredicate(format: "value BEGINSWITH %@", "Connected")
         let status = app.descendants(matching: .any)["activeSessionStatus"].firstMatch
         XCTAssertTrue(status.waitForExistence(timeout: 15))
         let online = XCTNSPredicateExpectation(predicate: connected, object: status)
@@ -282,7 +282,8 @@ final class Shots: XCTestCase {
         XCTAssertTrue(app.buttons["Save"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
         shot(label + "-preview")
         tap("Done")
-        let browser = app.descendants(matching: .any)["filesBrowser"].firstMatch
+        let browser = app.buttons["filesBack"].firstMatch
+        XCTAssertTrue(browser.waitForExistence(timeout: 10), app.debugDescription)
         for _ in 0..<8 {
             if !browser.exists { break }
             tap("filesBack")

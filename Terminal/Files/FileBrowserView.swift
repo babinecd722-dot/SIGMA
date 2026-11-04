@@ -120,7 +120,6 @@ private struct FileBrowserContent: View {
             content
         }
         .background(Color.terminalSurface.ignoresSafeArea())
-        .accessibilityIdentifier("filesBrowser")
         .toolbar(.hidden, for: .navigationBar)
         .task { await vm.open() }
         .onDisappear { vm.park() }
@@ -421,7 +420,6 @@ private struct FileBrowserContent: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 12)
         .frame(height: 48)
-        .accessibilityIdentifier("filesHeader")
     }
 
     // MARK: - Actions

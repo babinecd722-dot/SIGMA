@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import NIO
+@testable import SwiftTerm
 @testable import Citadel
 @testable import Terminal
 
@@ -23,14 +24,15 @@ final class TerminalRecoveryTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(100))
             view.selectWordForCopy(at: CGPoint(x: 8, y: 8))
             XCTAssertTrue(view.hasActiveSelection)
-            view.feed(text: "\u{1b}[?1h\u{1b}[?1049h\u{1b}[?1000h")
-            view.feed(text: "\u{1b}cAFTER_RESTART")
+            view.feed(text: "\u{1b}[?1h\u{1b}[?1049h\u{1b}[?1000h\u{1b}[?25l")
+            view.feed(text: String(decoding: TerminalSession.freshPTYReset, as: UTF8.self) + "AFTER_RESTART")
             try await Task.sleep(for: .milliseconds(100))
             let text = view.visibleRowsText(0..<view.terminalDimensions.rows).joined()
             XCTAssertTrue(text.contains("AFTER_RESTART"), text)
             XCTAssertFalse(text.contains("OLD_SESSION"), text)
             XCTAssertFalse(view.terminalInputStateSnapshot()?.applicationCursor ?? true)
             XCTAssertFalse(view.hasActiveSelection)
+            XCTAssertFalse(view.withTerminal { $0.cursorHidden })
             for (actual, expected) in [(view.nativeBackgroundColor, theme.uiBackground),
                                        (view.nativeForegroundColor, theme.uiForeground)] {
                 var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
