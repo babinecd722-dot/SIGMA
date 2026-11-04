@@ -33,6 +33,91 @@ def patch(checkouts):
 
     ios_terminal = checkouts / "SwiftTerm/Sources/SwiftTerm/iOS/iOSTerminalView.swift"
     replace_once(ios_terminal,
+        """        // Configure the shared menu controller
+        let menuController = UIMenuController.shared""",
+        """        // Use the system editing menu on modern iOS. Reuse one
+        // interaction rather than adding another for every long press.
+        if #available(iOS 16.0, visionOS 1.0, *) {
+            let interaction: UIEditMenuInteraction
+            if let existing = interactions.compactMap({ $0 as? UIEditMenuInteraction }).first {
+                interaction = existing
+            } else {
+                interaction = UIEditMenuInteraction(delegate: nil)
+                addInteraction(interaction)
+            }
+            let visible = forRegion.intersection(bounds)
+            let anchor = visible.isNull ? CGPoint(x: bounds.midX, y: bounds.midY)
+                : CGPoint(x: visible.midX, y: visible.minY)
+            interaction.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: anchor))
+            return
+        }
+
+        // Configure the shared menu controller
+        let menuController = UIMenuController.shared""")
+    replace_once(ios_terminal,
+        """         if gestureRecognizer.state == .began {
+             let _ = self.becomeFirstResponder()
+             let tapLocation = gestureRecognizer.location(in: gestureRecognizer.view)
+             let tapRegion = makeContextMenuRegionForTap (point: tapLocation)
+
+             showContextMenu (forRegion: tapRegion,
+                              pos: calculateTapHit (gesture: gestureRecognizer).grid)
+          }
+    }""".replace("\n\n", "\n" + " " * 13 + "\n"),
+        """        guard gestureRecognizer.state == .began else { return }
+        selectWordForCopy(at: gestureRecognizer.location(in: self))
+    }
+
+    /// A deliberate hold always selects local output, even while
+    /// tmux or another TUI has enabled mouse reporting.
+    public func selectWordForCopy(at point: CGPoint) {
+        let hit = calculateTapHit(point: point).grid
+        withTerminal { terminal in
+            selection.selectWordOrExpression(at: hit, in: terminal.displayBuffer)
+            selection.selectionMode = .character
+        }
+        enableSelectionPanGesture()
+        _ = becomeFirstResponder()
+        frameDriver.markDirty()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil else { return }
+            let region = self.hasActiveSelection ? self.makeContextMenuRegionForSelection()
+                : self.makeContextMenuRegionForTap(point: point)
+            self.showContextMenu(forRegion: region, pos: hit)
+        }
+    }""")
+    replace_once(ios_terminal,
+        "longPress.minimumPressDuration = 0.7",
+        "longPress.minimumPressDuration = 0.5")
+    replace_once(ios_terminal,
+        "        singleTap.require(toFail: doubleTap)",
+        """        singleTap.require(toFail: longPress)
+        singleTap.require(toFail: doubleTap)""")
+    replace_once(ios_terminal,
+        "        self.panSelectionGesture = gesture\n",
+        """        self.panSelectionGesture = gesture
+        panGestureRecognizer.require(toFail: gesture)
+""")
+    replace_once(ios_terminal,
+        """            ProgramScrollRouting.capturesGesture(
+                allowMouseReporting: allowMouseReporting,
+                mouseTracking: (mouseMode ?? terminal.mouseMode) != .off,""",
+        """            !selection.active && ProgramScrollRouting.capturesGesture(
+                allowMouseReporting: allowMouseReporting,
+                mouseTracking: (mouseMode ?? terminal.mouseMode) != .off,""")
+    replace_once(ios_terminal,
+        """            self.invalidateTerminalContents()
+
+            if !self.withTerminal({ _ in self.selection.active }) {""",
+        """            self.invalidateTerminalContents()
+            self.refreshProgramScrollGesture()
+
+            if !self.withTerminal({ _ in self.selection.active }) {
+                if #available(iOS 16.0, visionOS 1.0, *) {
+                    self.interactions.compactMap { $0 as? UIEditMenuInteraction }
+                        .forEach { $0.dismissMenu() }
+                }""")
+    replace_once(ios_terminal,
         """        // Global reverse video needs an opaque background for its swapped text color.
         if reverseColorsActiveValue() {
             effectiveNativeBackgroundColor.setFill()

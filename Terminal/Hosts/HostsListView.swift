@@ -160,10 +160,16 @@ struct HostsListView: View {
 
                 Spacer(minLength: 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .terminalGlass(cornerRadius: 16)
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(minHeight: 80)
+            .terminalGlass(cornerRadius: 20)
+            .overlay {
+                if let session = liveSession(for: profile) {
+                    ServerConnectionDecoration(session: session)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(HostRowStyle())
         .listRowSeparator(.hidden)
@@ -269,24 +275,22 @@ struct HostsListView: View {
         OSMark(osID: profile.osID)
     }
 
-    /// Icon tile; the connect/reconnect states wrap it in a spinning
-    /// accent ring so the wait reads as motion, not a dead button.
+    /// Rounded platform tile. Connection feedback belongs to the whole card.
     private func serverIcon(_ profile: ServerProfile) -> some View {
-        ZStack {
-            osGlyph(profile)
-                .frame(width: 36, height: 36)
-            if let live = liveSession(for: profile),
-               live.state == .connecting || live.state == .reconnecting {
-                ConnectRing()
+        osGlyph(profile)
+            .frame(width: 48, height: 48)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
-        }
-        .frame(width: 46, height: 46)
     }
 
     // MARK: - Actions
 
     /// Tapping a row keeps the user in the list: the session connects
-    /// in the background (ring on the icon) and only a successful
+    /// in the background (electric outline on the card) and only a successful
     /// handshake pushes the terminal. Failures stay here with the
     /// session's own alert. A profile that already has a live tab in
     /// the workspace is surfaced there instead — never a second
@@ -334,7 +338,7 @@ struct HostsListView: View {
             engine.closeSession(pending)
         case .offline:
             // A server that drops the shell mid-setup would otherwise
-            // leave the icon ring spinning forever.
+            // leave the connection effect running forever.
             pendingConnect = nil
         default:
             break
@@ -397,39 +401,11 @@ private struct PendingWatcher: View {
     }
 }
 
-/// SwiftUI owns the repeating phase. Removing the indicator or enabling
-/// Reduce Motion ends it immediately, without deferred animation tasks.
-private struct ConnectRing: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Group {
-            if reduceMotion {
-                ring
-            } else {
-                ring.phaseAnimator([false, true]) { content, rotated in
-                    content.rotationEffect(.degrees(rotated ? 360 : 0))
-                } animation: { rotated in
-                    rotated ? .linear(duration: 1.2) : nil
-                }
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    private var ring: some View {
-        Circle()
-            .trim(from: 0, to: 0.72)
-            .stroke(Color.terminalAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            .frame(width: 46, height: 46)
-    }
-}
-
 /// Quiet press feedback — just a fade, no chrome.
 struct HostRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.75 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

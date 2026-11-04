@@ -54,6 +54,11 @@ final class Shots: XCTestCase {
         if tips.waitForExistence(timeout: 2) { tips.tap() }
         app.typeText("printf 'USER_COMMAND_OK\\n'\n")
         waitForText("USER_COMMAND_OK")
+        // A hold must select local text and offer native Copy even
+        // though this tmux fixture has mouse reporting switched on.
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.01)).press(forDuration: 0.7)
+        shot("01-native-copy-menu")
+        tap("Copy")
         app.typeText("for i in {1..50}; do echo row-$i; done\n")
         waitForText("row-50")
         hideKeyboard()
