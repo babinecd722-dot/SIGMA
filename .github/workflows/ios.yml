@@ -21,7 +21,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Verify legacy history migration
         run: python3 scripts/test_legacy_history.py
@@ -42,10 +44,10 @@ jobs:
           cp Package.resolved Terminal.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
       - name: Cache packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/SourcePackages
-          key: spm-v2-${{ hashFiles('project.yml', 'Package.resolved', 'scripts/patch_dependencies.py', 'scripts/citadel_handshake.swift') }}-${{ runner.os }}
+          key: spm-v2-${{ hashFiles('project.yml', 'Package.resolved', 'scripts/patch*.py', 'scripts/citadel*.swift') }}-${{ runner.os }}
 
       - name: Resolve pinned dependencies and apply reviewed patches
         run: |
@@ -102,7 +104,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-results
           path: |
@@ -163,6 +165,9 @@ jobs:
           PY
           sudo chown shotbot:staff /Users/shotbot/.zsh_history
           sudo chmod 600 /Users/shotbot/.zsh_history
+          # Old clients left a full private history copy. The new
+          # migration must retire it and leave no replacement backup.
+          sudo cp -p /Users/shotbot/.zsh_history /Users/shotbot/.zsh_history.sigma-backup-Ab12Cd34
           sudo chown shotbot:staff /Users/shotbot/.zshenv /Users/shotbot/.zshrc /Users/shotbot/.tmux.conf
           sudo dscl . -passwd /Users/shotbot 'Term1n4lSh0ts' \
             || printf 'Term1n4lSh0ts\n' | sudo dscl . -passwd /Users/shotbot
@@ -206,6 +211,20 @@ jobs:
             -resultBundlePath build/ui-tests.xcresult \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee test.log
 
+      - name: Verify remote history hygiene
+        run: |
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/Users/shotbot')
+          assert not list(root.glob('.*_history.sigma-backup-*')), 'Unexpected persistent history copy'
+          assert not list(root.glob('.*_history.sigma.????????')), 'Unexpected history migration files'
+          for name in ['.bash_history', '.zsh_history']:
+              path = root / name
+              if path.exists():
+                  assert 'tmux new-session -d -s' not in path.read_text(), 'Legacy bootstrap survived migration'
+          print('Remote history hygiene: no legacy bootstrap, no persistent client copies or migration files')
+          PY
+
       - name: Stop local SSH fixture
         if: always()
         run: |
@@ -221,7 +240,7 @@ jobs:
 
       - name: Upload screenshots and UI log
         if: always() && hashFiles('build/ui-tests.xcresult/Info.plist') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ui-screenshots
           path: |
@@ -234,7 +253,7 @@ jobs:
 
       - name: Upload UI result bundle
         if: always() && hashFiles('build/ui-tests.xcresult/Info.plist') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ui-test-results
           path: build/ui-tests.xcresult
@@ -264,7 +283,7 @@ jobs:
           ls -lh Terminal.ipa
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Terminal-ipa
           path: |
@@ -279,10 +298,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: Terminal-ipa
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             Terminal.ipa

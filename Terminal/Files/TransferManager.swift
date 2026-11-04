@@ -190,16 +190,13 @@ final class TransferManager: ObservableObject {
         transfers.removeAll { !$0.state.isActive }
     }
 
-    /// Leftover `.*.partial-*` staging files from a killed run. Final
+    /// Leftover staging files with our exact UUID suffix from a killed run. Final
     /// names are deliberately NOT touched — a crash during the move can
     /// leave either the partial or the committed file, and only the
     /// partial is disposable.
     private func sweepPartials() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        for name in (try? FileManager.default.contentsOfDirectory(atPath: docs.path)) ?? []
-        where name.hasPrefix(".") && name.contains(".partial-") {
-            try? FileManager.default.removeItem(at: docs.appendingPathComponent(name))
-        }
+        FileStaging.purgeDownloadPartials(in: docs)
     }
 
     // MARK: - Slots

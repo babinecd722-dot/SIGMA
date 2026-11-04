@@ -677,7 +677,7 @@ final class PortForwardService: ObservableObject {
 /// and EOF propagates as a half-close so a finished upload still gets
 /// its response. Mutable state lives in a locked box for the same
 /// reason as `NIOToNWBridge`.
-private final class NIOPipeHandler: ChannelInboundHandler, Sendable {
+final class NIOPipeHandler: ChannelInboundHandler, Sendable {
     typealias InboundIn = NIOAny
 
     private struct State {
@@ -688,7 +688,7 @@ private final class NIOPipeHandler: ChannelInboundHandler, Sendable {
 
     private let state = NIOLockedValueBox(State())
 
-    private static func matchedPair() -> (NIOPipeHandler, NIOPipeHandler) {
+    static func matchedPair() -> (NIOPipeHandler, NIOPipeHandler) {
         let a = NIOPipeHandler()
         let b = NIOPipeHandler()
         a.state.withLockedValue { $0.partner = b }
@@ -701,14 +701,35 @@ private final class NIOPipeHandler: ChannelInboundHandler, Sendable {
     /// The returned future fails when the target is unreachable, so the
     /// caller sees a refused forward rather than a silently dead one.
     static func connect(forwarded: Channel, targetHost: String, targetPort: Int) -> EventLoopFuture<Void> {
-        ClientBootstrap(group: forwarded.eventLoop)
-            .connect(host: targetHost, port: targetPort)
-            .flatMap { local in
-                let (a, b) = matchedPair()
-                return forwarded.pipeline.addHandler(a).flatMap {
-                    local.pipeline.addHandler(b)
-                }
-            }
+        let (a, b) = matchedPair()
+        return forwarded.setOption(ChannelOptions.autoRead, value: false).flatMap {
+            forwarded.setOption(ChannelOptions.allowRemoteHalfClosure, value: true)
+        }.flatMap {
+            forwarded.pipeline.addHandler(a)
+        }.flatMap {
+            // A target can send its greeting immediately on connect.
+            // Install the receiver before activation, with reads held
+            // until both halves of the bridge have become active.
+            ClientBootstrap(group: forwarded.eventLoop)
+                .channelOption(ChannelOptions.autoRead, value: false)
+                .channelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
+                .channelInitializer { local in local.pipeline.addHandler(b) }
+                .connect(host: targetHost, port: targetPort)
+                .map { _ in () }
+        }.flatMapError { error in
+            // No orphan forwarded channel or strong handler pair when
+            // a target refuses the connection or initialization fails.
+            forwarded.close(promise: nil)
+            return forwarded.eventLoop.makeFailedFuture(error)
+        }
+    }
+
+    func channelActive(context: ChannelHandlerContext) {
+        context.fireChannelActive()
+        read(context: context)
+        if context.channel.isWritable {
+            partner()?.resumePendingRead()
+        }
     }
 
     private func partner() -> NIOPipeHandler? {
@@ -739,7 +760,8 @@ private final class NIOPipeHandler: ChannelInboundHandler, Sendable {
         // Locks are taken one at a time, never nested — the partner's
         // box is only touched after this handler's is released.
         let writable = partner()?.isWritable ?? false
-        if writable {
+        if context.channel.isActive && writable {
+            state.withLockedValue { $0.pendingRead = false }
             context.read()
         } else {
             state.withLockedValue { $0.pendingRead = true }
@@ -747,11 +769,14 @@ private final class NIOPipeHandler: ChannelInboundHandler, Sendable {
     }
 
     private var isWritable: Bool {
-        state.withLockedValue { $0.context?.channel.isWritable ?? false }
+        state.withLockedValue {
+            guard let channel = $0.context?.channel else { return false }
+            return channel.isActive && channel.isWritable
+        }
     }
 
     func channelWritabilityChanged(context: ChannelHandlerContext) {
-        if context.channel.isWritable {
+        if context.channel.isActive && context.channel.isWritable {
             partner()?.resumePendingRead()
         }
         context.fireChannelWritabilityChanged()
@@ -759,9 +784,9 @@ private final class NIOPipeHandler: ChannelInboundHandler, Sendable {
 
     private func resumePendingRead() {
         let ctx = state.withLockedValue { s -> ChannelHandlerContext? in
-            guard s.pendingRead else { return nil }
+            guard s.pendingRead, let context = s.context, context.channel.isActive else { return nil }
             s.pendingRead = false
-            return s.context
+            return context
         }
         ctx?.read()
     }
@@ -771,10 +796,14 @@ private final class NIOPipeHandler: ChannelInboundHandler, Sendable {
     func handlerAdded(context: ChannelHandlerContext) {
         state.withLockedValue { $0.context = context }
         // Paced reads only — the pipe owns read() from now on.
-        context.channel.setOption(ChannelOptions.autoRead, value: false).whenComplete { [weak channel = context.channel] _ in
-            channel?.read()
+        context.channel.setOption(ChannelOptions.autoRead, value: false).whenComplete { [weak self] result in
+            guard let self, let context = self.state.withLockedValue({ $0.context }) else { return }
+            switch result {
+            case .success: self.read(context: context)
+            case .failure(let error): self.errorCaught(context: context, error: error)
+            }
         }
-        if context.channel.isWritable {
+        if context.channel.isActive && context.channel.isWritable {
             partner()?.resumePendingRead()
         }
     }

@@ -15,7 +15,7 @@ struct TerminalSurface: UIViewRepresentable {
     var isActive = true
 
     func makeUIView(context: Context) -> TerminalView {
-        let view = AccessibleTerminalView(frame: .zero)
+        let view = AccessibleTerminalView(frame: .zero, options: Self.terminalOptions)
         Self.applyStyle(view, fontSize: fontSize, theme: theme)
         view.terminalDelegate = context.coordinator
         view.inputAccessoryView = accessory
@@ -94,6 +94,15 @@ struct TerminalSurface: UIViewRepresentable {
         view.updateColorScheme(style == .light ? .light : .dark)
         view.setNeedsDisplay()
         if keyboardChanged, view.isFirstResponder { view.reloadInputViews() }
+    }
+
+    /// Desktop SwiftTerm permits 65 MiB per OSC. Keep the mobile parser
+    /// bounded before base64 decoding, while allowing clipboard traffic
+    /// and inline images up to roughly 6 MiB of encoded content.
+    static var terminalOptions: TerminalOptions {
+        var options = TerminalOptions.default
+        options.maximumOscBytes = 8 * 1024 * 1024
+        return options
     }
 
     /// The accessory bar outlives any single TerminalView (it's cached

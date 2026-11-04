@@ -338,7 +338,10 @@ struct FilePreviewView: View {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("preview-\(UUID().uuidString)", isDirectory: true)
         do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: folder, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
             // Server-controlled name — same flattening rules the
             // transfer queue applies.
             let target = folder.appendingPathComponent(TransferManager.sanitizedFileName(file.name))
@@ -387,31 +390,35 @@ struct FilePreviewView: View {
     /// Decode huge rasters through ImageIO with a pixel cap so a 40 MP
     /// photo can't blow the memory budget. Runs on a detached worker —
     /// never the UI thread.
-    nonisolated private static func downsampled(_ data: Data, maxPixel: CGFloat = 4096) -> UIImage? {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
-        let w = props?[kCGImagePropertyPixelWidth] as? CGFloat ?? 0
-        let h = props?[kCGImagePropertyPixelHeight] as? CGFloat ?? 0
-        guard max(w, h) > maxPixel else { return UIImage(data: data) }
+    nonisolated static func downsampled(
+        _ data: Data,
+        maxPixel: CGFloat = 4096,
+        makeThumbnail: (CGImageSource, CFDictionary) -> CGImage? = {
+            CGImageSourceCreateThumbnailAtIndex($0, 0, $1)
+        }
+    ) -> UIImage? {
+        guard maxPixel.isFinite, maxPixel >= 1 else { return nil }
+        let limit = Int(min(4096, maxPixel.rounded(.down)))
+        guard let src = CGImageSourceCreateWithData(
+            data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
+        ) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-            kCGImageSourceCreateThumbnailWithTransform: true
+            kCGImageSourceThumbnailMaxPixelSize: limit,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
         ]
-        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, options as CFDictionary) else {
-            return UIImage(data: data)
-        }
+        // Do not retry through UIImage(data:) when ImageIO rejects a
+        // thumbnail: that bypasses the pixel limit for untrusted files.
+        guard let cg = makeThumbnail(src, options as CFDictionary),
+              cg.width <= limit, cg.height <= limit else { return nil }
         return UIImage(cgImage: cg)
     }
 
     /// Left-over share folders from previous runs — called once at app
     /// launch so killed mid-share sessions can't accumulate secrets.
     static func purgeShareTemps() {
-        let tmp = FileManager.default.temporaryDirectory
-        for item in (try? FileManager.default.contentsOfDirectory(atPath: tmp.path)) ?? []
-        where item.hasPrefix("preview-") {
-            try? FileManager.default.removeItem(at: tmp.appendingPathComponent(item))
-        }
+        FileStaging.purgePreviewFolders(in: FileManager.default.temporaryDirectory)
     }
 }
 

@@ -275,8 +275,9 @@ actor SSHConnection {
 
     // MARK: - Channels
 
-    /// Shared by simultaneous tabs, so no PTY reads old history while a
-    /// migration is still running. A failed cleanup never prevents login.
+    /// Shared only while a cleanup is running. Recheck before each new
+    /// PTY: a pre-existing shell can write its old in-memory history back
+    /// after our previous cleanup. Never inject commands into that shell.
     private var legacyHistoryTask: Task<Void, Never>?
 
     /// Authenticate without handing the mutable library client across
@@ -291,6 +292,7 @@ actor SSHConnection {
             }
             legacyHistoryTask = task
             await task.value
+            legacyHistoryTask = nil
         }
     }
 

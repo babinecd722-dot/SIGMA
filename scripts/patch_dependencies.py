@@ -3,6 +3,8 @@
 import argparse
 from pathlib import Path
 import stat
+from patch_crypto_security import patch_crypto_security
+from patch_terminal_security import patch_terminal_security
 
 
 def write_source(path, text):
@@ -21,6 +23,7 @@ def replace_once(path, before, after):
 
 
 def patch(checkouts):
+    patch_crypto_security(checkouts, replace_once, write_source)
     powerline = next(checkouts.glob("SwiftTerm/Sources/**/PowerlineRenderer.swift"))
     text = powerline.read_text()
     while "Array(Array(flameLowerPath.dropFirst()))" in text:
@@ -392,10 +395,17 @@ extension TerminalViewDelegate {""")
             serverAuthDelegate: HandshakeHostKeyValidator(base: settings.hostKeyValidator, handshake: handshakeHandler)""")
     sftp_client = checkouts / "Citadel/Sources/Citadel/SFTP/Client/SFTPClient.swift"
     text = sftp_client.read_text()
+    request_start = text.index("    internal func sendRequest(_ request: SFTPRequest) async throws -> SFTPResponse {")
+    request_end = text.index("\n    /// Set the attributes of a file", request_start)
+    request = Path(__file__).with_name("citadel_sftp_request.swift").read_text().rstrip()
+    text = text[:request_start] + request + "\n" + text[request_end:]
     start = text.index("    public func openSFTP(\n")
     end = text.index("\n}\n\n/// A tracker for in-flight SFTP requests.", start)
     opening = Path(__file__).with_name("citadel_sftp_open.swift").read_text().rstrip()
     write_source(sftp_client, text[:start] + opening + text[end:])
+    replace_once(sftp_client,
+        "    fileprivate init(channel: Channel, responses: SFTPResponses, logger: Logger) {",
+        "    init(channel: Channel, responses: SFTPResponses, logger: Logger) {")
     sftp_inbound = checkouts / "Citadel/Sources/Citadel/SFTP/Client/SFTPClientInboundHandler.swift"
     replace_once(sftp_inbound,
         "    func channelRead(context: ChannelHandlerContext, data: NIOAny) {",
@@ -438,6 +448,27 @@ extension TerminalViewDelegate {""")
             }.flatMap {""")
 
     nio = checkouts / "swift-nio-ssh/Sources/NIOSSH/NIOSSHHandler.swift"
+    signature = checkouts / "swift-nio-ssh/Sources/NIOSSH/Keys And Signatures/NIOSSHSignature.swift"
+    # GHSA-998x-vgvp-xwpc / CVE-2026-43798. Backport upstream
+    # 31cdc3c3391a10460dedf1170530cf651d2ca496 to the pinned fork:
+    # hostile KEX signatures are parsed before host-key verification.
+    replace_once(signature,
+        "    private init(r: ByteBuffer, s: ByteBuffer, pointSize: Int) {",
+        "    private init(r: ByteBuffer, s: ByteBuffer, pointSize: Int) throws {")
+    replace_once(signature,
+        """        let sByteView = s.mpIntView
+
+        let rByteStartingOffset = pointSize - rByteView.count""",
+        """        let sByteView = s.mpIntView
+
+        guard rByteView.count <= pointSize, sByteView.count <= pointSize else {
+            throw NIOSSHError.invalidSSHMessage(reason: "ECDSA signature mpint exceeds curve point size")
+        }
+
+        let rByteStartingOffset = pointSize - rByteView.count""")
+    replace_once(signature,
+        "        let helper = ECDSASignatureHelper(r: r, s: s, pointSize: Signature.pointSize)",
+        "        let helper = try ECDSASignatureHelper(r: r, s: s, pointSize: Signature.pointSize)")
     replace_once(nio,
         "    private func dropAllPendingGlobalRequests(_ error: Error) {",
         """    /// Event-loop-only heartbeat; either request success or refusal
@@ -466,6 +497,7 @@ extension TerminalViewDelegate {""")
     }
 
     public func onDisconnect(perform onDisconnect: @escaping @Sendable () -> ()) {""")
+    patch_terminal_security(checkouts)
 
 
 if __name__ == "__main__":
