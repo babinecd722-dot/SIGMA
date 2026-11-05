@@ -4,7 +4,14 @@ import Foundation
 /// SSH exec channel. No persistent copies, shell hooks or helper files.
 /// Unknown formats, symlinks, large files and concurrent changes are skipped.
 enum LegacyShellHistory {
-    static let cleanupCommand = #"""
+    // sshd evaluates exec requests in the account's login shell. Zsh's
+    // default NOMATCH aborts an unmatched backup glob; fish has different
+    // syntax altogether. Keep the migration inside an explicit POSIX shell.
+    static let cleanupCommand = "exec /bin/sh -c '"
+        + cleanupScript.replacingOccurrences(of: "'", with: "'\\''")
+        + "' sigma-history-cleanup"
+
+    private static let cleanupScript = #"""
     (
       umask 077
       task_history_home="${1:-$HOME}"
