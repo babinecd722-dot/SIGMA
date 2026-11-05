@@ -26,8 +26,10 @@ Foundation/XCTest runtime, so this is not a leak-audit claim.
   are checked, and unknown or changed keys require an explicit trust decision.
 - Secrets use device-local Keychain protection. Profile files use complete file
   protection. Remote clipboard reads are denied; writes require consent.
-- Mobile OSC input is bounded. Inline images are checked before raster decoding;
-  file previews use bounded ImageIO thumbnails without a full-raster fallback.
+- Mobile OSC input is bounded. Inline images are checked before raster decoding
+  and before rendering. The render budget includes screen scale and partially
+  occupied terminal rows; invalid size requests are rejected. File previews use
+  bounded ImageIO thumbnails without a full-raster fallback.
 - SFTP startup and individual requests have deadlines. A timed-out SFTP child
   does not close the shared SSH transport. File replacement preserves the
   original until commit; a recovery file after a failed replacement must not be
