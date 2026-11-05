@@ -457,6 +457,7 @@ struct RootView: View {
         let consentID: UUID
         let endpoint: String
 
+        @MainActor
         init(session: TerminalSession, data: Data) {
             self.session = session
             self.data = data

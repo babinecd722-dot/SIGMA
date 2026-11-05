@@ -275,29 +275,7 @@ COPY_HOLD = r"""        let point = gestureRecognizer.location(in: self)
     }
 
     func extendHeldCopySelectionLocked(to hit: Position) {
-        let cell = terminal.displayBuffer.getChar(atBufferRelative: hit)
-        let character = terminal.getCharacter(for: cell)
-        guard selection.selectionMode == .word,
-              character == "\0" || character.isWhitespace,
-              let anchor = selection.wordSelectionAnchor else {
-            selection.dragExtend(bufferPosition: hit)
-            return
-        }
-        // A finger in trailing space defines an endpoint, not a request
-        // to select every blank cell to the edge of the terminal row.
-        // Preserve the seed word even when the drag crosses backwards.
-        selection.selectionMode = .character
-        if Position.compare(hit, anchor.start) == .before {
-            selection.start = anchor.end
-            selection.dragExtend(bufferPosition: hit)
-        } else if Position.compare(hit, anchor.end) == .after {
-            selection.start = anchor.start
-            selection.dragExtend(bufferPosition: hit)
-        } else {
-            selection.start = anchor.start
-            selection.dragExtend(bufferPosition: anchor.end)
-        }
-        selection.selectionMode = .word
+        selection.extendTouchWordSelection(bufferPosition: hit)
     }
 
     func updateCopySelectionAutoScroll(at point: CGPoint) {
@@ -442,12 +420,76 @@ COPY_PAN = r"""    @objc func panSelectionHandler (_ gestureRecognizer: UIPanGes
         }
     }"""
 
+
+COPY_TOUCH_VIEW_PREVIOUS = r"""    func extendHeldCopySelectionLocked(to hit: Position) {
+        let cell = terminal.displayBuffer.getChar(atBufferRelative: hit)
+        let character = terminal.getCharacter(for: cell)
+        guard selection.selectionMode == .word,
+              character == "\0" || character.isWhitespace,
+              let anchor = selection.wordSelectionAnchor else {
+            selection.dragExtend(bufferPosition: hit)
+            return
+        }
+        // A finger in trailing space defines an endpoint, not a request
+        // to select every blank cell to the edge of the terminal row.
+        // Preserve the seed word even when the drag crosses backwards.
+        selection.selectionMode = .character
+        if Position.compare(hit, anchor.start) == .before {
+            selection.start = anchor.end
+            selection.dragExtend(bufferPosition: hit)
+        } else if Position.compare(hit, anchor.end) == .after {
+            selection.start = anchor.start
+            selection.dragExtend(bufferPosition: hit)
+        } else {
+            selection.start = anchor.start
+            selection.dragExtend(bufferPosition: anchor.end)
+        }
+        selection.selectionMode = .word
+    }
+"""
+
+COPY_TOUCH_VIEW = r"""    func extendHeldCopySelectionLocked(to hit: Position) {
+        selection.extendTouchWordSelection(bufferPosition: hit)
+    }
+"""
+
+COPY_TOUCH_SERVICE = r"""    /// Extend an iOS held-word selection without scanning whitespace
+    /// all the way to the last blank cell. Callers hold terminalLock.
+    func extendTouchWordSelection(bufferPosition unchecked: Position) {
+        let hit = clamp(terminal.displayBuffer, unchecked)
+        let cell = terminal.displayBuffer.getChar(atBufferRelative: hit)
+        let character = terminal.getCharacter(for: cell)
+        guard selectionMode == .word,
+              character == "\0" || character.isWhitespace,
+              let anchor = wordSelectionAnchor else {
+            dragExtend(bufferPosition: hit)
+            return
+        }
+        // Retain the seed word while moving just the touched endpoint.
+        // Endpoint mutation stays inside its owning SelectionService.
+        selectionMode = .character
+        if Position.compare(hit, anchor.start) == .before {
+            start = anchor.end
+            dragExtend(bufferPosition: hit)
+        } else if Position.compare(hit, anchor.end) == .after {
+            start = anchor.start
+            dragExtend(bufferPosition: hit)
+        } else {
+            start = anchor.start
+            dragExtend(bufferPosition: anchor.end)
+        }
+        selectionMode = .word
+    }
+
+"""
+
 def patch_terminal_selection(checkouts, replace_once, write_source):
     ios_terminal = checkouts / "SwiftTerm/Sources/SwiftTerm/iOS/iOSTerminalView.swift"
     # Upgrade only the exact implementation produced by the previous
     # reviewed patch. Fresh pinned and repeated patched sources share the
     # same source checks below; an unexpected layout still fails closed.
     for previous, current in [
+        (COPY_TOUCH_VIEW_PREVIOUS, COPY_TOUCH_VIEW),
         (COPY_HOLD_PREVIOUS, COPY_HOLD),
         (COPY_MENU_PREVIOUS, COPY_MENU),
         (COPY_STATE_PREVIOUS, COPY_STATE),
@@ -606,3 +648,11 @@ def patch_terminal_selection(checkouts, replace_once, write_source):
         guard isFirstResponder else {""")
 
     replace_once(ios_terminal, COPY_PAN_PREVIOUS, COPY_PAN)
+
+    service = checkouts / "SwiftTerm/Sources/SwiftTerm/SelectionService.swift"
+    anchor = """    /**
+     * Extends the selection by moving the end point to the new point.
+     * The row is in screen coordinates
+     */
+    public func dragExtend (row: Int, col: Int)"""
+    replace_once(service, anchor, COPY_TOUCH_SERVICE + anchor)
