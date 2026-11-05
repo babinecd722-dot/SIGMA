@@ -88,6 +88,26 @@ enum KeyVault {
 
     static func `import`(pem: String, name: String, passphrase: String?) throws -> StoredSSHKey {
         let parsed = try OpenSSHKeyParser.parse(pem, passphrase: passphrase)
+        try Task.checkCancellation()
+        return try storeImportedKey(parsed, name: name)
+    }
+
+    /// Parsing may perform a long KDF. Keep its worker cancellable and do
+    /// not create a Keychain item for an abandoned import.
+    static func `import`(pem: String, name: String, passphrase: String?) async throws -> StoredSSHKey {
+        let parsed = try await runKeyWork {
+            try OpenSSHKeyParser.parse(pem, passphrase: passphrase)
+        }
+        try Task.checkCancellation()
+        let key = try storeImportedKey(parsed, name: name)
+        if Task.isCancelled {
+            removeStoredSecrets(for: key)
+            throw CancellationError()
+        }
+        return key
+    }
+
+    private static func storeImportedKey(_ parsed: OpenSSHKeyParser.Parsed, name: String) throws -> StoredSSHKey {
         var key = StoredSSHKey()
         key.name = name.isEmpty ? (parsed.comment.isEmpty ? "key" : parsed.comment) : name
         key.type = parsed.type
@@ -199,6 +219,7 @@ enum KeyVault {
     /// caller's actor. Cooperative cancellation is polled inside the
     /// KDF itself, so `task.cancel()` unwinds promptly.
     static func exportPrivateKey(_ key: StoredSSHKey, passphrase: String? = nil) async throws -> String {
+        try Task.checkCancellation()
         guard key.type != .secureEnclaveP256, key.type != .rsa else {
             throw KeyVaultError.cannotExport
         }
@@ -220,9 +241,9 @@ enum KeyVault {
         // The Keychain read is fast I/O and keeps the LAContext on the
         // caller's actor; only the CPU-heavy encoding goes detached.
         let raw = try loadMaterial(tag: key.keychainTag, context: context)
-        return try await Task.detached(priority: .userInitiated) {
+        return try await runKeyWork {
             try encodeExportPEM(key: key, material: raw, passphrase: passphrase)
-        }.value
+        }
     }
 
     /// Blob assembly + optional encryption for already-loaded material.

@@ -40,6 +40,7 @@ final class AppState: ObservableObject {
         }
         Haptics.setEnabled(settings.settings.haptics)
         keepAlive.setEnabled(settings.settings.keepAlive)
+        FileStaging.purgeKeyExportFolders(in: FileManager.default.temporaryDirectory)
         // A locked or corrupt keys file loads as an empty list. Sweeping
         // then would delete every private key in the Keychain.
         if !keys.storageBlocked {

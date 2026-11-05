@@ -68,6 +68,9 @@ final class SessionEngine: ObservableObject {
     /// the user confirms once per session.
     var onClipboardRequest: (@MainActor (TerminalSession, Data) -> Void)?
 
+    /// Retargeted/closed tabs must dismiss consent dialogs from their old peer.
+    var onClipboardRequestsCancelled: (@MainActor (UUID) -> Void)?
+
     /// tmux presence per profile — detected once, reused across tabs.
     /// Only a *successful* probe is cached: a timed-out exec leaves the
     /// entry empty so the next connect probes again instead of

@@ -74,9 +74,10 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// RIS in SwiftTerm deliberately preserves cursor visibility; a new
     /// PTY must also undo a previous application's hidden-cursor mode.
     static let freshPTYReset = Data("\u{1b}c\u{1b}[?25h".utf8)
-    /// Set after the user consents once — OSC 52 writes are then allowed
-    /// for the rest of this session's life.
-    var clipboardAllowed = false
+    /// Consent belongs to this peer, not a mutable profile/tab identifier.
+    /// Retargeting the tab or closing it retires pending dialog answers too.
+    private(set) var clipboardAllowed = false
+    private(set) var clipboardConsentID = UUID()
     private var clipboardAsked = false
 
     /// Terminal view attaches here: raw output bytes to render.
@@ -298,6 +299,9 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// generation counter is what makes "cancelled" observable: any
     /// async path holding an old generation simply doesn't publish.
     private func runConnect() {
+        // A replacement transport may present a new host key even at
+        // the same endpoint. Its remote clipboard permission is fresh.
+        retireClipboardConsent()
         connectGeneration += 1
         authGated = false
         let gen = connectGeneration
@@ -612,7 +616,7 @@ final class TerminalSession: ObservableObject, Identifiable {
     /// confirmed once per session — a hostile server must never reach
     /// the pasteboard silently.
     func clipboardWrite(_ data: Data) {
-        guard settings.settings.remoteClipboard, data.count <= 512_000 else { return }
+        guard !isTerminated, settings.settings.remoteClipboard, data.count <= 512_000 else { return }
         if clipboardAllowed {
             UIPasteboard.general.setData(data, forPasteboardType: "public.utf8-plain-text")
             return
@@ -620,6 +624,20 @@ final class TerminalSession: ObservableObject, Identifiable {
         guard !clipboardAsked else { return }
         clipboardAsked = true
         engine?.onClipboardRequest?(self, data)
+    }
+
+    func approveClipboardWrite(_ data: Data, consentID: UUID) {
+        guard !isTerminated, consentID == clipboardConsentID,
+              settings.settings.remoteClipboard, data.count <= 512_000 else { return }
+        clipboardAllowed = true
+        clipboardWrite(data)
+    }
+
+    private func retireClipboardConsent() {
+        clipboardAllowed = false
+        clipboardAsked = false
+        clipboardConsentID = UUID()
+        engine?.onClipboardRequestsCancelled?(id)
     }
 
     // MARK: - Input
@@ -770,6 +788,7 @@ final class TerminalSession: ObservableObject, Identifiable {
         // shared connect alive for siblings that still need it. A live
         // connection is shared, so it's left alone.
         isTerminated = true
+        retireClipboardConsent()
         releaseOutputWaiters()
         feedBuffer.removeAll()
         pendingOutput.removeAll()

@@ -117,7 +117,7 @@ struct RootView: View {
             Button("Deny", role: .cancel) { resolveClipboard(false) }
         } message: {
             if let request = clipboardRequest {
-                Text("\(request.session.profile.endpoint) wants to write \(request.data.count) bytes to the clipboard")
+                Text("\(request.endpoint) wants to write \(request.data.count) bytes to the clipboard")
             }
         }
         .task {
@@ -145,6 +145,11 @@ struct RootView: View {
             engine.onAuthNeeded = { _ in presentNextPasswordPrompt() }
             engine.onClipboardRequest = { session, data in
                 clipboardQueue.append(ClipboardRequest(session: session, data: data))
+                presentNextClipboard()
+            }
+            engine.onClipboardRequestsCancelled = { sessionID in
+                clipboardQueue.removeAll { $0.session.id == sessionID }
+                if clipboardRequest?.session.id == sessionID { clipboardRequest = nil }
                 presentNextClipboard()
             }
             syncKeepAlive()
@@ -449,6 +454,15 @@ struct RootView: View {
         let id = UUID()
         let session: TerminalSession
         let data: Data
+        let consentID: UUID
+        let endpoint: String
+
+        init(session: TerminalSession, data: Data) {
+            self.session = session
+            self.data = data
+            consentID = session.clipboardConsentID
+            endpoint = session.profile.endpoint
+        }
     }
 
     private func presentNextClipboard() {
@@ -463,10 +477,7 @@ struct RootView: View {
         }
         clipboardRequest = nil
         if allow {
-            // Consent is scoped to this tab's lifetime — the label says
-            // exactly that, and a fresh session asks again.
-            request.session.clipboardAllowed = true
-            request.session.clipboardWrite(request.data)
+            request.session.approveClipboardWrite(request.data, consentID: request.consentID)
         }
         presentNextClipboard()
     }

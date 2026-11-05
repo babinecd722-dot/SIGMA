@@ -18,9 +18,11 @@ root = Path(__file__).resolve().parent.parent
 sources = ["Concurrency/AsyncOperation.swift", "Concurrency/TransferPipeline.swift", "Concurrency/SecretMigration.swift",
            "Onboarding/QuickConnectParser.swift", "Models/ServerProfile.swift",
            "Models/AppSettings.swift", "Models/SettingsCodec.swift",
-           "Storage/JSONStore.swift", "Vault/SSHWire.swift"]
+           "Storage/JSONStore.swift", "Vault/SSHWire.swift", "Vault/KeyWork.swift",
+           "Vault/KeyExportStaging.swift", "Files/FileStaging.swift"]
 tests = ["AsyncOperationTests.swift", "TransferPipelineTests.swift",
-         "QuickConnectParserTests.swift", "StoresTests.swift", "SettingsCodecTests.swift", "SecretMigrationTests.swift"]
+         "QuickConnectParserTests.swift", "StoresTests.swift", "SettingsCodecTests.swift", "SecretMigrationTests.swift",
+         "KeyWorkTests.swift", "KeyExportStagingTests.swift", "FileStagingTests.swift"]
 with tempfile.TemporaryDirectory(prefix="terminal-checks-") as folder:
     package = Path(folder)
     for directory in ["Sources/Terminal", "Tests/TerminalTests"]:

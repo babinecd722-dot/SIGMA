@@ -20,6 +20,11 @@ enum FileStaging {
         }
     }
 
+    /// Called at launch, before any live key share can exist.
+    static func purgeKeyExportFolders(in directory: URL) {
+        purge(in: directory, directories: true, matches: KeyExportStaging.isExportFolderName)
+    }
+
     private static func isGeneratedUUID(_ value: String) -> Bool {
         guard let id = UUID(uuidString: value) else { return false }
         return value == id.uuidString

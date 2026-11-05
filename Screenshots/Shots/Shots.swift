@@ -50,8 +50,21 @@ final class Shots: XCTestCase {
         assertCleanTerminal()
 
         XCTAssertLessThan(terminal.frame.minY, 95, "Terminal must start below the status bar, without a navigation header")
-        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.01)).press(forDuration: 0.5)
+        // A hold on empty cells must never create a full-width blank
+        // selection, as seen on the physical device report.
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)).press(forDuration: 0.5)
+        XCTAssertFalse(app.descendants(matching: .any)["Copy"].firstMatch.exists,
+                       "Empty terminal space must not be offered as selected text")
+        shot("01-blank-hold-no-selection")
+        // Exercise the actual recognizer's hold-and-drag path as well
+        // as native unit tests of exact multiword selection ranges.
+        let word = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.01))
+        let wordEnd = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.01))
+        word.press(forDuration: 0.5, thenDragTo: wordEnd)
         XCTAssertTrue(app.descendants(matching: .any)["Copy"].firstMatch.waitForExistence(timeout: 10))
+        for action in ["AutoFill", "Passwords", "Insert Passkey"] {
+            XCTAssertFalse(app.buttons[action].firstMatch.exists, "Terminal copy menu must not offer credential insertion")
+        }
         shot("01-native-copy-keyboard-closed")
         tap("Copy")
         XCTAssertFalse(app.keyboards.firstMatch.exists, "Holding output must not open the keyboard")

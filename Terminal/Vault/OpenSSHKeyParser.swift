@@ -21,7 +21,12 @@ enum OpenSSHKeyParser {
     /// decoded material covers every supported key size many times over.
     private static let maxBodyBase64Length = 128 * 1024
 
-    struct Parsed {
+    /// Bound the complete paste before trimming or removing whitespace.
+    /// A base64-only limit applied after normalization still lets a huge
+    /// whitespace-heavy paste allocate several temporary strings on the UI.
+    private static let maxPEMUTF8Length = 256 * 1024
+
+    struct Parsed: Sendable {
         var type: StoredSSHKey.KeyType
         /// Raw private material suitable for storage in Keychain:
         /// ed25519 → 32-byte seed; ecdsa → scalar (big-endian, curve size).
@@ -31,6 +36,8 @@ enum OpenSSHKeyParser {
     }
 
     static func parse(_ pem: String, passphrase: String?) throws -> Parsed {
+        guard withinInputLimit(pem) else { throw SSHKeyImportError.invalidFormat }
+        try Task.checkCancellation()
         let trimmed = pem.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("-----BEGIN OPENSSH PRIVATE KEY-----"),
               trimmed.hasSuffix("-----END OPENSSH PRIVATE KEY-----") else {
@@ -285,6 +292,7 @@ enum OpenSSHKeyParser {
     }
 
     private static func decodeBlob(_ pem: String) -> Data? {
+        guard withinInputLimit(pem) else { return nil }
         let body = pem
             .replacingOccurrences(of: "-----BEGIN OPENSSH PRIVATE KEY-----", with: "")
             .replacingOccurrences(of: "-----END OPENSSH PRIVATE KEY-----", with: "")
@@ -292,6 +300,10 @@ enum OpenSSHKeyParser {
         // Size cap BEFORE base64 decode.
         guard body.count <= maxBodyBase64Length else { return nil }
         return Data(base64Encoded: body)
+    }
+
+    static func withinInputLimit(_ pem: String) -> Bool {
+        pem.utf8.prefix(maxPEMUTF8Length + 1).count <= maxPEMUTF8Length
     }
 
     private static func publicLine(type: String, blob: Data) -> String {

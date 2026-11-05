@@ -25,7 +25,13 @@ Foundation/XCTest runtime, so this is not a leak-audit claim.
 - SSH transport algorithms retain the fork's strict defaults. Known host keys
   are checked, and unknown or changed keys require an explicit trust decision.
 - Secrets use device-local Keychain protection. Profile files use complete file
-  protection. Remote clipboard reads are denied; writes require consent.
+  protection. Private-key exports use a unique private staging directory and
+  complete file protection; sharing completion and startup cleanup retire those
+  files. Import/export workers propagate cancellation to cooperative KDF work.
+  PEM input is bounded before normalization, not only after base64 extraction.
+- Remote clipboard reads are denied; writes require consent and are size-capped.
+  Retargeting, reconnecting or closing a tab revokes its prior write permission
+  and pending dialog answers. A late answer cannot authorize a replacement peer.
 - Mobile OSC input is bounded. Inline images are checked before raster decoding
   and before rendering. The render budget includes screen scale and partially
   occupied terminal rows; invalid size requests are rejected. File previews use

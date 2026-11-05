@@ -456,6 +456,27 @@ final class CryptoAndKeyParserTests: XCTestCase {
         }
     }
 
+    func testOversizedWhitespacePEMRejectedBeforeNormalization() {
+        // The base64 body is small and valid. The old body-only limit
+        // accepted this input after allocating normalized copies.
+        let padded = String(repeating: " \n", count: 140 * 1024) + ed25519PEM
+        XCTAssertThrowsError(try OpenSSHKeyParser.parse(padded, passphrase: nil)) {
+            XCTAssertEqual($0 as? SSHKeyImportError, .invalidFormat)
+        }
+        XCTAssertFalse(OpenSSHKeyParser.isEncrypted(
+            encryptedPEM + String(repeating: "\n", count: 270 * 1024)
+        ))
+    }
+
+    func testPEMWhitespaceAndUnicodeLimitsKeepOrdinaryImportWorking() throws {
+        let ordinary = " \n\t" + ed25519PEM + "\n "
+        XCTAssertEqual(try OpenSSHKeyParser.parse(ordinary, passphrase: nil).publicKeyLine, ed25519PublicLine)
+        XCTAssertTrue(OpenSSHKeyParser.isEncrypted("\n" + encryptedPEM + "\n"))
+        // Count encoded bytes, not graphemes: each scalar occupies four
+        // UTF-8 bytes, so a character-count limit would miss this case.
+        XCTAssertFalse(OpenSSHKeyParser.withinInputLimit(String(repeating: "🔑", count: 70 * 1024)))
+    }
+
     // MARK: - Cancellable bcrypt KDF (#18/#20)
 
     func testBCryptKDFIsCancellable() {

@@ -299,7 +299,7 @@ private struct KeyDetailView: View {
                     ShareSheet(items: [url]) {
                         // The temp copy served its purpose once the
                         // share completes.
-                        try? FileManager.default.removeItem(at: url)
+                        KeyExportStaging.remove(url)
                     }
                 }
             }
@@ -307,7 +307,7 @@ private struct KeyDetailView: View {
                 exportTask?.cancel()
                 exportTask = nil
                 if let url = exportedURL {
-                    try? FileManager.default.removeItem(at: url)
+                    KeyExportStaging.remove(url)
                     exportedURL = nil
                 }
             }
@@ -366,6 +366,7 @@ private struct KeyDetailView: View {
     /// Cancel stops the vault work and the sheet only leaves once the
     /// task is really done — no PEM write can land after dismissal.
     private func closeExportSheet() {
+        exportPassphrase = ""
         guard let task = exportTask else {
             showExportSheet = false
             return
@@ -380,21 +381,14 @@ private struct KeyDetailView: View {
 
     /// Private material exports as a file, never as shared text.
     private func writeExport(_ pem: String) throws -> URL {
-        var safe = key.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if safe.isEmpty { safe = "key" }
-        safe = safe.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(safe)
-            .appendingPathExtension("key")
-        try Data(pem.utf8).write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
-        return url
+        try KeyExportStaging.write(pem, name: key.name)
     }
 
     /// Share sheet closed: drop the temp file and both secrets held in
     /// state so nothing sensitive lingers.
     private func finishShare() {
         if let exportedURL {
-            try? FileManager.default.removeItem(at: exportedURL)
+            KeyExportStaging.remove(exportedURL)
         }
         exportedURL = nil
         exportPassphrase = ""
@@ -413,13 +407,15 @@ private struct KeyImportView: View {
     @State private var passphrase = ""
     @State private var failure: String?
     @State private var importing = false
+    @State private var importTask: Task<Void, Never>?
 
     private var encrypted: Bool {
         OpenSSHKeyParser.isEncrypted(pem)
     }
 
     private var canAdd: Bool {
-        !pem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        OpenSSHKeyParser.withinInputLimit(pem)
+            && !pem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && (!encrypted || !passphrase.isEmpty)
     }
 
@@ -478,7 +474,7 @@ private struct KeyImportView: View {
             .onChange(of: pem) { _, _ in failure = nil }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { cancelImport() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if importing {
@@ -490,25 +486,35 @@ private struct KeyImportView: View {
                 }
             }
             .interactiveDismissDisabled(importing)
+            .onDisappear {
+                importTask?.cancel()
+                importTask = nil
+                pem = ""
+                passphrase = ""
+            }
         }
         .presentationDetents([.medium, .large])
     }
 
     private func add() {
+        guard !importing else { return }
         // bcrypt KDF on an encrypted key can run for seconds — never
         // on the main actor.
         let pem = self.pem
         let name = self.name.trimmingCharacters(in: .whitespaces)
         let passphrase = self.passphrase.isEmpty ? nil : self.passphrase
         importing = true
-        Task {
+        importTask = Task {
             do {
-                let key = try await Task.detached(priority: .userInitiated) {
-                    try KeyVault.`import`(pem: pem, name: name, passphrase: passphrase)
-                }.value
-                // A failed write keeps the form open — the key is in
-                // the keychain but wasn't persisted to the store.
+                let key = try await KeyVault.`import`(pem: pem, name: name, passphrase: passphrase)
+                if Task.isCancelled {
+                    KeyVault.removeStoredSecrets(for: key)
+                    throw CancellationError()
+                }
+                // A failed metadata write keeps the form open and
+                // removes this import's unreferenced Keychain item.
                 guard keys.save(key) else {
+                    KeyVault.removeStoredSecrets(for: key)
                     importing = false
                     failure = String(localized: "Couldn't save")
                     Haptics.failed()
@@ -516,12 +522,24 @@ private struct KeyImportView: View {
                 }
                 Haptics.connected()
                 dismiss()
+            } catch is CancellationError {
+                importing = false
             } catch {
                 importing = false
                 failure = (error as? SSHKeyImportError).map(Self.describe)
                     ?? String(localized: "Couldn't read this key")
                 Haptics.failed()
             }
+        }
+    }
+
+    private func cancelImport() {
+        guard let task = importTask else { dismiss(); return }
+        importTask = nil
+        task.cancel()
+        Task {
+            await task.value
+            dismiss()
         }
     }
 

@@ -206,8 +206,8 @@ jobs:
             -destination "platform=iOS Simulator,id=$UDID" \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 2100 \
-            -maximum-test-execution-time-allowance 2400 \
+            -default-test-execution-time-allowance 2400 \
+            -maximum-test-execution-time-allowance 2700 \
             -resultBundlePath build/ui-tests.xcresult \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee test.log
 
