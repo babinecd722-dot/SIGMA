@@ -14,7 +14,10 @@ final class KeyExportStagingTests: XCTestCase {
         let fileAttributes = try FileManager.default.attributesOfItem(atPath: first.path)
         XCTAssertEqual((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
         XCTAssertEqual((fileAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
-        #if os(iOS)
+        // Simulator Foundation does not expose NSFileProtectionKey.
+        // Keep this device-only assertion alongside the cross-platform
+        // mode, content, isolation and cleanup checks above/below.
+        #if os(iOS) && !targetEnvironment(simulator)
         let protection = fileAttributes[.protectionKey]
         let protectionName = (protection as? FileProtectionType)?.rawValue ?? (protection as? String)
         XCTAssertEqual(protectionName, FileProtectionType.complete.rawValue)
