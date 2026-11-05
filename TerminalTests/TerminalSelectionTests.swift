@@ -185,6 +185,32 @@ final class TerminalSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testStandardSelectActionUsesTheSameBlankGuardAndScrollbackCoordinates() async {
+        let view = await fixture("hello world")
+        for hit in [Position(col: 24, row: 0), Position(col: 5, row: 0), Position(col: 8, row: 5)] {
+            view.lastLongSelect = hit
+            view.select(nil)
+            XCTAssertFalse(view.hasActiveSelection, "Standard Select must reject empty cells and spaces too")
+        }
+        view.lastLongSelect = Position(col: 1, row: 0)
+        view.select(nil)
+        assertCopiedText("hello", from: view)
+        XCTAssertFalse(view.isFirstResponder)
+
+        let scrolled = AccessibleTerminalView(frame: CGRect(x: 0, y: 0, width: 390, height: 200))
+        TerminalSurface.applyStyle(scrolled, fontSize: 16, theme: .paper)
+        scrolled.feed(text: (0..<45).map { "word\($0)\r\n" }.joined())
+        await waitForText("word44", in: scrolled)
+        let height = scrolled.cellDimension.height
+        scrolled.contentSize = CGSize(width: 390, height: 45 * height)
+        scrolled.contentOffset.y = 7 * height
+        scrolled.lastLongSelect = Position(col: 1, row: 7)
+        scrolled.select(nil)
+        assertCopiedText("word7", from: scrolled)
+        XCTAssertFalse(scrolled.isFirstResponder)
+    }
+
+    @MainActor
     private func fixture(_ text: String) async -> AccessibleTerminalView {
         let view = AccessibleTerminalView(frame: CGRect(x: 0, y: 0, width: 390, height: 200))
         TerminalSurface.applyStyle(view, fontSize: 16, theme: .paper)

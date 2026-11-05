@@ -483,6 +483,33 @@ COPY_TOUCH_SERVICE = r"""    /// Extend an iOS held-word selection without scann
 
 """
 
+
+COPY_STANDARD_SELECT_PREVIOUS = r"""    @objc public override func select (_ sender: Any?)  {
+        if let loc = lastLongSelect {
+            withTerminal { terminal in
+                selection.selectWordOrExpression(at: Position (col: loc.col, row: loc.row), in: terminal.displayBuffer)
+                selection.selectionMode = .character
+            }
+            enableSelectionPanGesture()
+            DispatchQueue.main.async {
+                self.showContextMenu(forRegion:  self.makeContextMenuRegionForSelection(), pos: loc)
+            }
+@LEGACY_SELECT_BLANK@
+        }
+        lastLongSelect = nil
+    }""".replace("@LEGACY_SELECT_BLANK@", " " * 12)
+
+COPY_STANDARD_SELECT = r"""    @objc public override func select (_ sender: Any?) {
+        guard let hit = lastLongSelect else { return }
+        lastLongSelect = nil
+        guard hit.col >= 0, hit.row >= 0 else { return }
+        // Stored positions are buffer-relative; UIScrollView hit points
+        // are content-relative too. Do not add the scroll offset twice.
+        let point = CGPoint(x: (CGFloat(hit.col) + 0.5) * cellDimension.width,
+                            y: (CGFloat(hit.row) + 0.5) * cellDimension.height)
+        selectWordForCopy(at: point)
+    }"""
+
 def patch_terminal_selection(checkouts, replace_once, write_source):
     ios_terminal = checkouts / "SwiftTerm/Sources/SwiftTerm/iOS/iOSTerminalView.swift"
     # Upgrade only the exact implementation produced by the previous
@@ -656,3 +683,5 @@ def patch_terminal_selection(checkouts, replace_once, write_source):
      */
     public func dragExtend (row: Int, col: Int)"""
     replace_once(service, anchor, COPY_TOUCH_SERVICE + anchor)
+
+    replace_once(ios_terminal, COPY_STANDARD_SELECT_PREVIOUS, COPY_STANDARD_SELECT)
